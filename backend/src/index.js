@@ -1,0 +1,44 @@
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+
+const authRoutes = require('./modules/auth/auth.routes');
+const userRoutes = require('./modules/users/user.routes');
+const academicRoutes = require('./modules/academic-structure/academic.routes');
+const admissionsRoutes = require('./modules/admissions/admissions.routes');
+const curriculumRoutes = require('./modules/curriculum/curriculum.routes');
+const registrationRoutes = require('./modules/registration/registration.routes');
+const marksRoutes = require('./modules/marks/marks.routes');
+
+const app = express();
+
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true,
+}));
+app.use(express.json());
+
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date().toISOString() }));
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/academic', academicRoutes);
+app.use('/api/admissions', admissionsRoutes);
+app.use('/api/curriculum', curriculumRoutes);
+app.use('/api/registration', registrationRoutes);
+app.use('/api/marks', marksRoutes);
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Latech MIS backend running on port ${PORT}`);
+});
+
+module.exports = app;
