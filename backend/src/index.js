@@ -30,9 +30,20 @@ app.use('/api/curriculum', curriculumRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/marks', marksRoutes);
 
-// Global error handler
+// Global error handler — catches all unhandled async errors, never crashes the process
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error(err.message);
+  // PostgreSQL unique violation
+  if (err.code === '23505') {
+    const match = err.detail?.match(/Key \((\w+)\)=\((.+)\) already exists/);
+    const field = match ? match[1] : 'field';
+    const value = match ? match[2] : '';
+    return res.status(409).json({ error: `${field} "${value}" already exists` });
+  }
+  // PostgreSQL foreign key violation
+  if (err.code === '23503') {
+    return res.status(400).json({ error: 'Referenced record does not exist' });
+  }
   res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
 });
 
