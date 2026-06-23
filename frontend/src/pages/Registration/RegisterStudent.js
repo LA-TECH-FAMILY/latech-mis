@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ClipboardList, Search, CheckCircle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { ClipboardList, Search, CheckCircle, User } from 'lucide-react';
 import api from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import Spinner from '../../components/Spinner';
@@ -7,20 +7,20 @@ import StatusBadge from '../../components/StatusBadge';
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
-const selectCls = 'border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 
 export default function RegisterStudent() {
   const [years, setYears] = useState([]);
   const [filter, setFilter] = useState({ academic_year_id: '', semester: '1' });
-  const [studentId, setStudentId] = useState('');
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
   const [student, setStudent] = useState(null);
   const [curriculum, setCurriculum] = useState([]);
   const [selected, setSelected] = useState([]);
   const [clearancePct, setClearancePct] = useState(60);
   const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
+  const debounce = useRef(null);
 
   useEffect(() => {
     api.get('/academic/years').then(r => {
@@ -30,29 +30,30 @@ export default function RegisterStudent() {
     });
   }, []);
 
-  async function searchStudent() {
-    if (!studentId.trim()) return;
-    setSearching(true);
+  function handleQueryChange(e) {
+    const val = e.target.value;
+    setQuery(val);
     setStudent(null);
-    setCurriculum([]);
-    setSelected([]);
     setResult(null);
-    try {
-      // Look up by student ID
-      const r = await api.get(`/users/${studentId}`);
-      setStudent(r.data);
-    } catch {
-      alert('Student not found. Enter a valid User ID.');
-    } finally {
-      setSearching(false);
-    }
+    clearTimeout(debounce.current);
+    if (val.length < 2) { setSuggestions([]); return; }
+    debounce.current = setTimeout(async () => {
+      const r = await api.get(`/users/search/students?q=${encodeURIComponent(val)}`);
+      setSuggestions(r.data);
+    }, 300);
+  }
+
+  function selectStudent(s) {
+    setStudent(s);
+    setQuery(`${s.student_no} — ${s.first_name} ${s.last_name}`);
+    setSuggestions([]);
+    setResult(null);
   }
 
   useEffect(() => {
     if (!student || !filter.academic_year_id) return;
     setLoading(true);
-    // Load available courses based on student's programme curriculum
-    api.get(`/curriculum/courses`).then(r => {
+    api.get('/curriculum/courses').then(r => {
       setCurriculum(r.data);
       setSelected([]);
     }).finally(() => setLoading(false));
@@ -68,7 +69,7 @@ export default function RegisterStudent() {
     setResult(null);
     try {
       const r = await api.post('/registration/register', {
-        student_id: student.id,
+        student_id: student.student_id,
         academic_year_id: filter.academic_year_id,
         semester: parseInt(filter.semester),
         course_ids: selected,
@@ -90,24 +91,56 @@ export default function RegisterStudent() {
         {/* Step 1 — Find student */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h3 className="text-sm font-bold text-gray-700 mb-3">Step 1 — Find Student</h3>
-          <div className="flex gap-2">
-            <input
-              className={inputCls}
-              placeholder="Enter student User ID (UUID)…"
-              value={studentId}
-              onChange={e => setStudentId(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && searchStudent()}
-            />
-            <button onClick={searchStudent} disabled={searching} className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl disabled:opacity-60 shrink-0">
-              <Search size={14} /> {searching ? 'Searching…' : 'Find'}
-            </button>
+          <div className="relative">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input
+                  className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  placeholder="Search by student number, name or email…"
+                  value={query}
+                  onChange={handleQueryChange}
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+
+            {/* Dropdown suggestions */}
+            {suggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                {suggestions.map(s => (
+                  <button
+                    key={s.student_id}
+                    type="button"
+                    onClick={() => selectStudent(s)}
+                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-50 last:border-0"
+                  >
+                    <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center shrink-0">
+                      <User size={14} className="text-slate-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">{s.first_name} {s.last_name}</p>
+                      <p className="text-xs text-gray-400">{s.student_no} · {s.programme_code} · Year {s.year_of_study}</p>
+                    </div>
+                    <StatusBadge status={s.student_status} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {suggestions.length === 0 && query.length >= 2 && !student && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 px-4 py-3 text-sm text-gray-400">
+                No students found for "{query}"
+              </div>
+            )}
           </div>
+
           {student && (
-            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2">
+            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-3">
               <CheckCircle size={15} className="text-green-600 shrink-0" />
               <div>
                 <p className="text-sm font-semibold text-green-800">{student.first_name} {student.last_name}</p>
-                <p className="text-xs text-green-600">{student.email}</p>
+                <p className="text-xs text-green-600">{student.student_no} · {student.programme_name} · Year {student.year_of_study}</p>
               </div>
             </div>
           )}
@@ -134,7 +167,7 @@ export default function RegisterStudent() {
                 </select>
               </div>
               <div>
-                <label className={labelCls}>Clearance % (finance)</label>
+                <label className={labelCls}>Clearance %</label>
                 <input
                   type="number" min="0" max="100" step="5"
                   className={inputCls}
@@ -143,7 +176,7 @@ export default function RegisterStudent() {
                 />
               </div>
             </div>
-            <p className="mt-2 text-xs text-gray-400">Minimum 60% required for provisional registration. 100% for full registration.</p>
+            <p className="mt-2 text-xs text-gray-400">Min 60% for provisional · 100% for full registration</p>
           </div>
         )}
 
@@ -155,12 +188,7 @@ export default function RegisterStudent() {
               <div className="space-y-1.5 max-h-72 overflow-y-auto">
                 {curriculum.map(c => (
                   <label key={c.id} className={`flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-colors ${selected.includes(c.id) ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50 border border-transparent'}`}>
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(c.id)}
-                      onChange={() => toggleCourse(c.id)}
-                      className="rounded"
-                    />
+                    <input type="checkbox" checked={selected.includes(c.id)} onChange={() => toggleCourse(c.id)} className="rounded" />
                     <span className="font-mono text-xs font-semibold text-blue-700 w-24 shrink-0">{c.code}</span>
                     <span className="text-sm text-gray-700 flex-1">{c.name}</span>
                     <span className="text-xs text-gray-400 shrink-0">{c.credit_units} CU</span>
@@ -170,12 +198,11 @@ export default function RegisterStudent() {
               </div>
             )}
             {selected.length > 0 && (
-              <p className="mt-2 text-xs text-gray-500">{selected.length} courses selected · {curriculum.filter(c => selected.includes(c.id)).reduce((s, c) => s + Number(c.credit_units), 0)} total credit units</p>
+              <p className="mt-2 text-xs text-gray-500">{selected.length} courses · {curriculum.filter(c => selected.includes(c.id)).reduce((s, c) => s + Number(c.credit_units), 0)} total CU</p>
             )}
           </div>
         )}
 
-        {/* Register button */}
         {student && filter.academic_year_id && (
           <div className="flex justify-end">
             <button onClick={handleRegister} disabled={saving || selected.length === 0} className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-xl disabled:opacity-60 transition-colors">
@@ -184,14 +211,13 @@ export default function RegisterStudent() {
           </div>
         )}
 
-        {/* Result */}
         {result && (
           <div className="bg-green-50 border border-green-200 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle size={16} className="text-green-600" />
               <p className="text-sm font-bold text-green-800">Registration Successful</p>
             </div>
-            <div className="flex gap-4 text-sm text-green-700">
+            <div className="flex gap-4 text-sm text-green-700 flex-wrap">
               <span>Status: <StatusBadge status={result.registration.status} /></span>
               <span>Courses: <strong>{result.courses_registered}</strong></span>
               <span>Clearance: <strong>{result.registration.clearance_percent}%</strong></span>

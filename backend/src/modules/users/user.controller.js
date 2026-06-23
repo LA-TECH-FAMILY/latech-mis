@@ -146,4 +146,26 @@ async function listRoles(req, res) {
   res.json(rows);
 }
 
-module.exports = { listUsers, getUser, createUser, updateUser, assignRoles, listRoles };
+async function searchStudents(req, res) {
+  const { q } = req.query;
+  if (!q || q.length < 2) return res.json([]);
+
+  const { rows } = await db.query(
+    `SELECT s.id AS student_id, s.student_no, s.year_of_study, s.status AS student_status,
+            u.id AS user_id, u.first_name, u.last_name, u.email,
+            p.name AS programme_name, p.code AS programme_code
+     FROM students s
+     JOIN users u ON u.id = s.user_id
+     JOIN programmes p ON p.id = s.programme_id
+     WHERE s.student_no ILIKE $1
+        OR u.first_name ILIKE $1
+        OR u.last_name ILIKE $1
+        OR (u.first_name || ' ' || u.last_name) ILIKE $1
+        OR u.email ILIKE $1
+     LIMIT 10`,
+    [`%${q}%`]
+  );
+  res.json(rows);
+}
+
+module.exports = { listUsers, getUser, createUser, updateUser, assignRoles, listRoles, searchStudents };
