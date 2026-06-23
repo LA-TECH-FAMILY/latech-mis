@@ -151,4 +151,90 @@ async function acceptOffer(req, res) {
   res.json({ message: 'Offer accepted' });
 }
 
-module.exports = { listApplicants, getApplicant, createApplicant, updateStatus, makeOffer, acceptOffer };
+async function enrolStudent(req, res) {
+  const { id } = req.params;
+
+  const applicant = (await db.query('SELECT * FROM applicants WHERE id = $1', [id])).rows[0];
+  if (!applicant) return res.status(404).json({ error: 'Applicant not found' });
+  if (applicant.status !== 'accepted') return res.status(400).json({ error: 'Applicant must be in accepted status to enrol' });
+
+  // Find the accepted offer to get intake + programme
+  const offer = (await db.query(
+    `SELECT ao.intake_id, i.programme_id
+     FROM admission_offers ao
+     JOIN intakes i ON i.id = ao.intake_id
+     WHERE ao.applicant_id = $1 AND ao.status = 'accepted'
+     ORDER BY ao.accepted_at DESC LIMIT 1`,
+    [id]
+  )).rows[0];
+
+  // Fall back to first programme choice if no offer found
+  const fallback = !offer && (await db.query(
+    `SELECT ap.intake_id, i.programme_id
+     FROM application_programmes ap
+     JOIN intakes i ON i.id = ap.intake_id
+     WHERE ap.applicant_id = $1
+     ORDER BY ap.preference_order LIMIT 1`,
+    [id]
+  )).rows[0];
+
+  const intake_id = (offer || fallback)?.intake_id;
+  const programme_id = (offer || fallback)?.programme_id;
+  if (!intake_id || !programme_id) return res.status(400).json({ error: 'No intake/programme linked to this applicant' });
+
+  // Generate student number: A + 5 digits, starting from A10001
+  const maxRow = (await db.query(
+    `SELECT MAX(CAST(SUBSTRING(student_no FROM 2) AS INTEGER)) AS max_seq
+     FROM students WHERE student_no ~ '^A[0-9]+$'`
+  )).rows[0];
+  const nextSeq = (maxRow.max_seq || 10000) + 1;
+  const student_no = `A${nextSeq}`;
+
+  // Create user account for the student
+  const bcrypt = require('bcryptjs');
+  const email = applicant.email || `${student_no.toLowerCase()}@student.latech.ac.ug`;
+  const tempPassword = await bcrypt.hash(student_no, 12);
+
+  const existingUser = (await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()])).rows[0];
+  let user_id;
+  if (existingUser) {
+    user_id = existingUser.id;
+  } else {
+    const userRow = (await db.query(
+      `INSERT INTO users (email, password_hash, first_name, last_name, other_names, phone, gender, date_of_birth)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [email.toLowerCase(), tempPassword, applicant.first_name, applicant.last_name,
+       applicant.other_names, applicant.phone, applicant.gender, applicant.date_of_birth]
+    )).rows[0];
+    user_id = userRow.id;
+
+    // Assign student role
+    const studentRole = (await db.query(`SELECT id FROM roles WHERE name = 'student'`)).rows[0];
+    if (studentRole) {
+      await db.query(
+        'INSERT INTO user_roles (user_id, role_id, assigned_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+        [user_id, studentRole.id, req.user.id]
+      );
+    }
+  }
+
+  // Create student record
+  const studentRow = (await db.query(
+    `INSERT INTO students (user_id, student_no, applicant_id, intake_id, programme_id, nationality, enrollment_date)
+     VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE) RETURNING *`,
+    [user_id, student_no, id, intake_id, programme_id, applicant.nationality]
+  )).rows[0];
+
+  // Mark applicant as enrolled
+  await db.query('UPDATE applicants SET status = $1, updated_at = NOW() WHERE id = $2', ['enrolled', id]);
+
+  res.status(201).json({
+    message: 'Student enrolled successfully',
+    student_no,
+    student_id: studentRow.id,
+    login_email: email,
+    temp_password: student_no,
+  });
+}
+
+module.exports = { listApplicants, getApplicant, createApplicant, updateStatus, makeOffer, acceptOffer, enrolStudent };

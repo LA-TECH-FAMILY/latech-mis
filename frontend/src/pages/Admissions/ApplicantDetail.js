@@ -30,6 +30,7 @@ export default function ApplicantDetail() {
   const [offerModal, setOfferModal] = useState(false);
   const [offerForm, setOfferForm] = useState({ intake_id: '', expires_at: '' });
   const [saving, setSaving] = useState(false);
+  const [enrolResult, setEnrolResult] = useState(null);
 
   async function load() {
     const [a, i] = await Promise.all([
@@ -47,6 +48,20 @@ export default function ApplicantDetail() {
     if (!window.confirm(`Move applicant to "${status}"?`)) return;
     await api.put(`/admissions/${id}/status`, { status });
     load();
+  }
+
+  async function enrolStudent() {
+    if (!window.confirm('Enrol this student? A student ID and login account will be created.')) return;
+    setSaving(true);
+    try {
+      const r = await api.post(`/admissions/${id}/enrol`);
+      setEnrolResult(r.data);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Enrolment failed');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function makeOffer(e) {
@@ -105,8 +120,8 @@ export default function ApplicantDetail() {
               </button>
             )}
             {data.status === 'accepted' && (
-              <button onClick={() => updateStatus('enrolled')} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors">
-                <CheckCircle size={12} /> Enrol Student
+              <button onClick={enrolStudent} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg disabled:opacity-60 transition-colors">
+                <CheckCircle size={12} /> {saving ? 'Enrolling…' : 'Enrol Student'}
               </button>
             )}
             {!['rejected', 'withdrawn', 'enrolled'].includes(data.status) && (
@@ -193,6 +208,31 @@ export default function ApplicantDetail() {
           )}
         </div>
       </div>
+
+      {/* Enrolment success banner */}
+      {enrolResult && (
+        <div className="mt-5 bg-emerald-50 border border-emerald-200 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle size={16} className="text-emerald-600" />
+            <p className="text-sm font-bold text-emerald-800">Student Enrolled Successfully</p>
+          </div>
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Student ID</p>
+              <p className="text-lg font-bold text-emerald-900 font-mono">{enrolResult.student_no}</p>
+            </div>
+            <div>
+              <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Login Email</p>
+              <p className="font-medium text-emerald-800">{enrolResult.login_email}</p>
+            </div>
+            <div>
+              <p className="text-xs text-emerald-600 font-medium uppercase tracking-wide">Temp Password</p>
+              <p className="font-mono font-medium text-emerald-800">{enrolResult.temp_password}</p>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-emerald-600">Share login credentials with the student. They should change their password on first login.</p>
+        </div>
+      )}
 
       {/* Offer Modal */}
       {offerModal && (
