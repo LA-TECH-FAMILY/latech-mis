@@ -24,6 +24,9 @@ import RegistrationWindows from './pages/Registration/RegistrationWindows';
 import RegisterStudent from './pages/Registration/RegisterStudent';
 import UserList from './pages/Users/UserList';
 import NewUser from './pages/Users/NewUser';
+import FeeStructure from './pages/Finance/FeeStructure';
+import Invoices from './pages/Finance/Invoices';
+import InvoiceDetail from './pages/Finance/InvoiceDetail';
 
 function PrivateRoute({ children, ...rest }) {
   const { user, loading } = useAuth();
@@ -76,6 +79,11 @@ function AppRoutes() {
       <PrivateRoute path="/marks/enter"><MarkEntry /></PrivateRoute>
       <PrivateRoute path="/marks/approval"><MarkApproval /></PrivateRoute>
       <PrivateRoute path="/marks/results"><StudentResults /></PrivateRoute>
+
+      {/* Finance */}
+      <PrivateRoute path="/finance/fee-structure"><FeeStructure /></PrivateRoute>
+      <PrivateRoute exact path="/finance/invoices"><Invoices /></PrivateRoute>
+      <PrivateRoute path="/finance/invoices/:id"><InvoiceDetail /></PrivateRoute>
 
       {/* Users */}
       <PrivateRoute exact path="/users"><UserList /></PrivateRoute>

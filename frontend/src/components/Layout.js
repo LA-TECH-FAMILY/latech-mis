@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   FileText, PenLine, Building2, ChevronDown, ChevronRight,
-  LogOut, Menu, X, School
+  LogOut, Menu, X, School, DollarSign
 } from 'lucide-react';
 
 const NAV = [
@@ -61,6 +61,15 @@ const NAV = [
       { label: 'Enter Marks', path: '/marks/enter' },
       { label: 'Approval Queue', path: '/marks/approval' },
       { label: 'View Results', path: '/marks/results' },
+    ],
+  },
+  {
+    label: 'Finance',
+    icon: DollarSign,
+    roles: ['admin', 'registrar', 'finance_officer'],
+    children: [
+      { label: 'Fee Structure', path: '/finance/fee-structure' },
+      { label: 'Invoices', path: '/finance/invoices' },
     ],
   },
   {

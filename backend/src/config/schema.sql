@@ -277,6 +277,80 @@ CREATE TABLE mark_entries (
 );
 
 -- ============================================================
+-- FINANCE
+-- ============================================================
+
+-- Fee items catalogue (e.g. Tuition, Functional, Caution)
+CREATE TABLE fee_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Fee structure: amount per programme / year of study / semester
+CREATE TABLE fee_structures (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  programme_id UUID REFERENCES programmes(id),   -- NULL = applies to all programmes
+  year_of_study INT,                              -- NULL = applies to all years
+  semester INT CHECK (semester IN (1,2,3)),       -- NULL = applies to all semesters
+  fee_item_id UUID NOT NULL REFERENCES fee_items(id),
+  amount NUMERIC(12,2) NOT NULL,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (academic_year_id, programme_id, year_of_study, semester, fee_item_id)
+);
+
+-- Invoice generated per student per registration period
+CREATE TABLE invoices (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_no VARCHAR(30) UNIQUE NOT NULL,        -- INV-2025-000001
+  student_id UUID NOT NULL REFERENCES students(id),
+  academic_year_id UUID NOT NULL REFERENCES academic_years(id),
+  semester INT NOT NULL CHECK (semester IN (1,2,3)),
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  amount_paid NUMERIC(12,2) NOT NULL DEFAULT 0,
+  balance NUMERIC(12,2) GENERATED ALWAYS AS (total_amount - amount_paid) STORED,
+  clearance_percent NUMERIC(5,2) GENERATED ALWAYS AS (
+    CASE WHEN total_amount = 0 THEN 100
+         ELSE ROUND((amount_paid / total_amount) * 100, 2)
+    END
+  ) STORED,
+  status VARCHAR(20) NOT NULL DEFAULT 'unpaid'
+    CHECK (status IN ('unpaid', 'partial', 'paid', 'waived', 'cancelled')),
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Line items on each invoice
+CREATE TABLE invoice_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  invoice_id UUID NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  fee_item_id UUID NOT NULL REFERENCES fee_items(id),
+  description VARCHAR(200) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL
+);
+
+-- Payment receipts
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  receipt_no VARCHAR(30) UNIQUE NOT NULL,        -- RCT-2025-000001
+  invoice_id UUID NOT NULL REFERENCES invoices(id),
+  student_id UUID NOT NULL REFERENCES students(id),
+  amount NUMERIC(12,2) NOT NULL,
+  payment_method VARCHAR(30) NOT NULL DEFAULT 'bank'
+    CHECK (payment_method IN ('bank', 'mobile_money', 'cash', 'online', 'waiver')),
+  reference_no VARCHAR(100),                     -- bank/mobile money ref
+  payment_date DATE NOT NULL,
+  received_by UUID REFERENCES users(id),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
 -- AUDIT LOG (append-only)
 -- ============================================================
 
@@ -312,3 +386,7 @@ CREATE INDEX idx_mark_entries_status ON mark_entries(status);
 CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id);
 CREATE INDEX idx_audit_log_user ON audit_log(user_id);
 CREATE INDEX idx_registered_courses_registration ON registered_courses(registration_id);
+CREATE INDEX idx_invoices_student ON invoices(student_id);
+CREATE INDEX idx_invoices_year_sem ON invoices(academic_year_id, semester);
+CREATE INDEX idx_payments_invoice ON payments(invoice_id);
+CREATE INDEX idx_payments_student ON payments(student_id);
