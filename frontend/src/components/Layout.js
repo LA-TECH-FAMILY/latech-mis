@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   FileText, PenLine, Building2, ChevronDown, ChevronRight,
-  LogOut, Menu, X, School, DollarSign, UserCheck
+  LogOut, Menu, X, School, DollarSign, UserCheck, Briefcase, Settings
 } from 'lucide-react';
 
 const NAV = [
@@ -43,6 +43,7 @@ const NAV = [
       { label: 'All Students', path: '/students' },
     ],
   },
+
   {
     label: 'Curriculum',
     icon: BookOpen,
@@ -82,12 +83,14 @@ const NAV = [
     ],
   },
   {
-    label: 'Users',
-    icon: Users,
+    label: 'User Management',
+    icon: Settings,
     roles: ['admin'],
     children: [
-      { label: 'All Users', path: '/users' },
-      { label: 'Add User', path: '/users/new' },
+      { label: 'Student Accounts', path: '/users/students' },
+      { label: 'Staff Accounts',   path: '/users/staff' },
+      { label: 'System Users',     path: '/users' },
+      { label: 'Add User',         path: '/users/new' },
     ],
   },
 ];

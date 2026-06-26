@@ -205,8 +205,8 @@ CREATE TABLE students (
   student_type VARCHAR(20) NOT NULL DEFAULT 'government'
     CHECK (student_type IN ('government', 'private', 'international', 'staff_dependent')),
   nationality VARCHAR(100),
-  status VARCHAR(20) NOT NULL DEFAULT 'active'
-    CHECK (status IN ('active', 'deferred', 'discontinued', 'completed', 'graduated', 'suspended')),
+  status VARCHAR(30) NOT NULL DEFAULT 'active'
+    CHECK (status IN ('admitted','active','deferred','discontinued','completed','graduated','suspended','transfer','pending_transcript')),
   enrollment_date DATE NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

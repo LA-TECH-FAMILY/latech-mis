@@ -26,6 +26,7 @@ import RegistrationClearance from './pages/Registration/RegistrationClearance';
 import StudentList from './pages/Students/StudentList';
 import UserList from './pages/Users/UserList';
 import NewUser from './pages/Users/NewUser';
+import StaffList from './pages/Users/StaffList';
 import FeeStructure from './pages/Finance/FeeStructure';
 import Invoices from './pages/Finance/Invoices';
 import InvoiceDetail from './pages/Finance/InvoiceDetail';
@@ -93,6 +94,8 @@ function AppRoutes() {
       <PrivateRoute path="/finance/invoices/:id"><InvoiceDetail /></PrivateRoute>
 
       {/* Users */}
+      <PrivateRoute path="/users/students"><StudentList /></PrivateRoute>
+      <PrivateRoute path="/users/staff"><StaffList /></PrivateRoute>
       <PrivateRoute exact path="/users"><UserList /></PrivateRoute>
       <PrivateRoute path="/users/new"><NewUser /></PrivateRoute>
 
