@@ -24,4 +24,9 @@ router.post('/curricula/:id/units', academic, wrap(c.createUnit));
 router.put('/curricula/:id/units/:unitId', academic, wrap(c.updateUnit));
 router.delete('/curricula/:id/units/:unitId', academic, wrap(c.deleteUnit));
 
+// Curriculum configurations
+router.get('/curricula/:id/configs', wrap(c.listConfigs));
+router.post('/curricula/:id/configs', academic, wrap(c.upsertConfig));
+router.delete('/curricula/:id/configs/:configId', academic, wrap(c.deleteConfig));
+
 module.exports = router;

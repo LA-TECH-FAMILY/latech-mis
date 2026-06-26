@@ -196,8 +196,59 @@ async function deleteUnit(req, res) {
   res.json({ message: 'Unit removed' });
 }
 
+// ---- Curriculum Configurations ----
+async function listConfigs(req, res) {
+  const { id } = req.params;
+  const { rows } = await db.query(
+    `SELECT * FROM curriculum_configs WHERE curriculum_id = $1
+     ORDER BY year_of_study, semester`,
+    [id]
+  );
+  res.json(rows);
+}
+
+async function upsertConfig(req, res) {
+  const { id: curriculum_id } = req.params;
+  const { year_of_study, semester, min_courses_core, max_courses_core,
+          max_cu, min_cu, max_electives, min_electives,
+          on_sem_retake_max, off_sem_retake_max } = req.body;
+  if (!year_of_study || !semester) {
+    return res.status(400).json({ error: 'year_of_study and semester are required' });
+  }
+  const { rows } = await db.query(
+    `INSERT INTO curriculum_configs
+       (curriculum_id, year_of_study, semester, min_courses_core, max_courses_core,
+        max_cu, min_cu, max_electives, min_electives, on_sem_retake_max, off_sem_retake_max)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (curriculum_id, year_of_study, semester) DO UPDATE SET
+       min_courses_core   = EXCLUDED.min_courses_core,
+       max_courses_core   = EXCLUDED.max_courses_core,
+       max_cu             = EXCLUDED.max_cu,
+       min_cu             = EXCLUDED.min_cu,
+       max_electives      = EXCLUDED.max_electives,
+       min_electives      = EXCLUDED.min_electives,
+       on_sem_retake_max  = EXCLUDED.on_sem_retake_max,
+       off_sem_retake_max = EXCLUDED.off_sem_retake_max,
+       updated_at         = NOW()
+     RETURNING *`,
+    [curriculum_id, year_of_study, semester,
+     min_courses_core || 0, max_courses_core || 0,
+     max_cu || 0, min_cu || 0,
+     max_electives || 0, min_electives || 0,
+     on_sem_retake_max ?? 3, off_sem_retake_max ?? 7]
+  );
+  res.json(rows[0]);
+}
+
+async function deleteConfig(req, res) {
+  const { configId } = req.params;
+  await db.query('DELETE FROM curriculum_configs WHERE id = $1', [configId]);
+  res.json({ message: 'Config deleted' });
+}
+
 module.exports = {
   listCourses, createCourse, updateCourse,
   listCurricula, createCurriculum, getCurriculum, updateCurriculum, replicateCurriculum,
   listUnits, createUnit, updateUnit, deleteUnit,
+  listConfigs, upsertConfig, deleteConfig,
 };
