@@ -17,6 +17,7 @@ import NewApplication from './pages/Admissions/NewApplication';
 import ApplicantDetail from './pages/Admissions/ApplicantDetail';
 import Courses from './pages/Curriculum/Courses';
 import ProgrammeCurriculum from './pages/Curriculum/ProgrammeCurriculum';
+import CurriculumDetail from './pages/Curriculum/CurriculumDetail';
 import MarkEntry from './pages/Marks/MarkEntry';
 import MarkApproval from './pages/Marks/MarkApproval';
 import StudentResults from './pages/Marks/StudentResults';
@@ -73,6 +74,7 @@ function AppRoutes() {
 
       {/* Curriculum */}
       <PrivateRoute path="/curriculum/courses"><Courses /></PrivateRoute>
+      <PrivateRoute path="/curriculum/curricula/:id"><CurriculumDetail /></PrivateRoute>
       <PrivateRoute path="/curriculum/programmes"><ProgrammeCurriculum /></PrivateRoute>
 
       {/* Students */}

@@ -221,7 +221,7 @@ async function createIntake(req, res) {
 module.exports = {
   listFaculties, createFaculty, updateFaculty,
   listDepartments, createDepartment, updateDepartment,
-  listProgrammes, createProgramme, updateProgramme,
+  listProgrammes, getProgrammeStats, getProgramme, createProgramme, updateProgramme,
   listAcademicYears, createAcademicYear, setCurrentYear,
   listIntakes, createIntake,
 };

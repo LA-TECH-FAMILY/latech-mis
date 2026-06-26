@@ -1,5 +1,6 @@
 const db = require('../../config/db');
 
+// ---- Courses (catalogue) ----
 async function listCourses(req, res) {
   const { department_id, level } = req.query;
   const where = ['c.is_active = TRUE'];
@@ -37,39 +38,166 @@ async function updateCourse(req, res) {
   res.json({ message: 'Course updated' });
 }
 
-async function getProgrammeCurriculum(req, res) {
-  const { programme_id, academic_year_id } = req.params;
+// ---- Curricula (versions) ----
+async function listCurricula(req, res) {
+  const { programme_id } = req.params;
   const { rows } = await db.query(
-    `SELECT pc.*, c.code AS course_code, c.name AS course_name, c.credit_units, c.level
-     FROM programme_curriculum pc JOIN courses c ON c.id = pc.course_id
-     WHERE pc.programme_id = $1 AND pc.academic_year_id = $2
-     ORDER BY pc.year_of_study, pc.semester, c.code`,
-    [programme_id, academic_year_id]
+    `SELECT c.*,
+            p.name AS programme_name, p.code AS programme_code,
+            (SELECT COUNT(*) FROM curriculum_units cu WHERE cu.curriculum_id = c.id AND cu.is_active = TRUE) AS unit_count,
+            (SELECT COUNT(*) FROM curriculum_units cu WHERE cu.curriculum_id = c.id AND cu.unit_type = 'core' AND cu.is_active = TRUE) AS core_count,
+            (SELECT COUNT(*) FROM curriculum_units cu WHERE cu.curriculum_id = c.id AND cu.unit_type = 'elective' AND cu.is_active = TRUE) AS elective_count,
+            (SELECT COUNT(*) FROM curriculum_units cu WHERE cu.curriculum_id = c.id AND cu.unit_type = 'foundation' AND cu.is_active = TRUE) AS foundation_count,
+            (SELECT COUNT(*) FROM students s WHERE s.programme_id = c.programme_id AND s.status = 'active') AS ongoing_count,
+            (SELECT COUNT(*) FROM students s WHERE s.programme_id = c.programme_id AND s.status = 'graduated') AS completed_count
+     FROM curricula c JOIN programmes p ON p.id = c.programme_id
+     WHERE c.programme_id = $1 AND c.is_active = TRUE
+     ORDER BY c.created_at DESC`,
+    [programme_id]
   );
   res.json(rows);
 }
 
-async function setProgrammeCurriculum(req, res) {
-  const { programme_id, academic_year_id } = req.params;
-  const { courses } = req.body; // [{course_id, year_of_study, semester, is_core}]
+async function createCurriculum(req, res) {
+  const { programme_id } = req.params;
+  const { name, code, stage, status, electives_waiver, use_course_tracks, review_date } = req.body;
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const { rows } = await db.query(
+    `INSERT INTO curricula (programme_id, name, code, stage, status, electives_waiver, use_course_tracks, review_date)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [programme_id, name, code || null, stage || 'draft', status || 'active',
+     electives_waiver || 'consider', use_course_tracks || false, review_date || null]
+  );
+  res.status(201).json(rows[0]);
+}
 
-  if (!Array.isArray(courses)) return res.status(400).json({ error: 'courses array required' });
+async function getCurriculum(req, res) {
+  const { id } = req.params;
+  const curr = (await db.query(
+    `SELECT c.*, p.name AS programme_name, p.code AS programme_code, p.duration_years
+     FROM curricula c JOIN programmes p ON p.id = c.programme_id WHERE c.id = $1`,
+    [id]
+  )).rows[0];
+  if (!curr) return res.status(404).json({ error: 'Curriculum not found' });
+  res.json(curr);
+}
 
-  // Replace curriculum for this programme + year
+async function updateCurriculum(req, res) {
+  const { id } = req.params;
+  const { name, code, stage, status, electives_waiver, use_course_tracks, review_date, is_active } = req.body;
   await db.query(
-    'DELETE FROM programme_curriculum WHERE programme_id = $1 AND academic_year_id = $2',
-    [programme_id, academic_year_id]
+    `UPDATE curricula SET
+       name               = COALESCE($1, name),
+       code               = COALESCE($2, code),
+       stage              = COALESCE($3, stage),
+       status             = COALESCE($4, status),
+       electives_waiver   = COALESCE($5, electives_waiver),
+       use_course_tracks  = COALESCE($6, use_course_tracks),
+       review_date        = COALESCE($7, review_date),
+       is_active          = COALESCE($8, is_active),
+       updated_at         = NOW()
+     WHERE id = $9`,
+    [name, code, stage, status, electives_waiver, use_course_tracks, review_date, is_active, id]
+  );
+  res.json({ message: 'Curriculum updated' });
+}
+
+async function replicateCurriculum(req, res) {
+  const { id } = req.params;
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'name for new curriculum is required' });
+
+  const orig = (await db.query('SELECT * FROM curricula WHERE id = $1', [id])).rows[0];
+  if (!orig) return res.status(404).json({ error: 'Curriculum not found' });
+
+  const { rows: [newCurr] } = await db.query(
+    `INSERT INTO curricula (programme_id, name, code, stage, status, electives_waiver, use_course_tracks)
+     VALUES ($1, $2, $3, 'draft', 'incoming', $4, $5) RETURNING *`,
+    [orig.programme_id, name, orig.code, orig.electives_waiver, orig.use_course_tracks]
   );
 
-  for (const item of courses) {
+  // Copy all units
+  const units = (await db.query(
+    'SELECT * FROM curriculum_units WHERE curriculum_id = $1 AND is_active = TRUE', [id]
+  )).rows;
+
+  for (const u of units) {
     await db.query(
-      `INSERT INTO programme_curriculum (programme_id, academic_year_id, course_id, year_of_study, semester, is_core)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [programme_id, academic_year_id, item.course_id, item.year_of_study, item.semester, item.is_core !== false]
+      `INSERT INTO curriculum_units (curriculum_id, code, name, abbreviation, unit_type, credit_units,
+         year_of_study, semester, exam_max, exam_pass, coursework_max, coursework_pass, sort_order)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [newCurr.id, u.code, u.name, u.abbreviation, u.unit_type, u.credit_units,
+       u.year_of_study, u.semester, u.exam_max, u.exam_pass, u.coursework_max, u.coursework_pass, u.sort_order]
     );
   }
 
-  res.json({ message: 'Curriculum saved', count: courses.length });
+  res.status(201).json({ ...newCurr, units_copied: units.length });
 }
 
-module.exports = { listCourses, createCourse, updateCourse, getProgrammeCurriculum, setProgrammeCurriculum };
+// ---- Curriculum Units ----
+async function listUnits(req, res) {
+  const { id } = req.params;
+  const { rows } = await db.query(
+    `SELECT * FROM curriculum_units WHERE curriculum_id = $1 AND is_active = TRUE
+     ORDER BY year_of_study, semester, sort_order, code`,
+    [id]
+  );
+  res.json(rows);
+}
+
+async function createUnit(req, res) {
+  const { id: curriculum_id } = req.params;
+  const { code, name, abbreviation, unit_type, credit_units, year_of_study, semester,
+          exam_max, exam_pass, coursework_max, coursework_pass } = req.body;
+  if (!code || !name || !year_of_study || !semester) {
+    return res.status(400).json({ error: 'code, name, year_of_study, semester are required' });
+  }
+  const { rows } = await db.query(
+    `INSERT INTO curriculum_units
+       (curriculum_id, code, name, abbreviation, unit_type, credit_units, year_of_study, semester,
+        exam_max, exam_pass, coursework_max, coursework_pass)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [curriculum_id, code.toUpperCase(), name, abbreviation || null,
+     unit_type || 'core', credit_units || 3, year_of_study, semester,
+     exam_max || 70, exam_pass || 35, coursework_max || 30, coursework_pass || 15]
+  );
+  res.status(201).json(rows[0]);
+}
+
+async function updateUnit(req, res) {
+  const { unitId } = req.params;
+  const { code, name, abbreviation, unit_type, credit_units, year_of_study, semester,
+          exam_max, exam_pass, coursework_max, coursework_pass, is_active } = req.body;
+  await db.query(
+    `UPDATE curriculum_units SET
+       code             = COALESCE($1, code),
+       name             = COALESCE($2, name),
+       abbreviation     = COALESCE($3, abbreviation),
+       unit_type        = COALESCE($4, unit_type),
+       credit_units     = COALESCE($5, credit_units),
+       year_of_study    = COALESCE($6, year_of_study),
+       semester         = COALESCE($7, semester),
+       exam_max         = COALESCE($8, exam_max),
+       exam_pass        = COALESCE($9, exam_pass),
+       coursework_max   = COALESCE($10, coursework_max),
+       coursework_pass  = COALESCE($11, coursework_pass),
+       is_active        = COALESCE($12, is_active),
+       updated_at       = NOW()
+     WHERE id = $13`,
+    [code, name, abbreviation, unit_type, credit_units, year_of_study, semester,
+     exam_max, exam_pass, coursework_max, coursework_pass, is_active, unitId]
+  );
+  res.json({ message: 'Unit updated' });
+}
+
+async function deleteUnit(req, res) {
+  const { unitId } = req.params;
+  await db.query('UPDATE curriculum_units SET is_active = FALSE WHERE id = $1', [unitId]);
+  res.json({ message: 'Unit removed' });
+}
+
+module.exports = {
+  listCourses, createCourse, updateCourse,
+  listCurricula, createCurriculum, getCurriculum, updateCurriculum, replicateCurriculum,
+  listUnits, createUnit, updateUnit, deleteUnit,
+};
