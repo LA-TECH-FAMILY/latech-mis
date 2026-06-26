@@ -10,6 +10,7 @@ const curriculumRoutes = require('./modules/curriculum/curriculum.routes');
 const registrationRoutes = require('./modules/registration/registration.routes');
 const marksRoutes = require('./modules/marks/marks.routes');
 const financeRoutes = require('./modules/finance/finance.routes');
+const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.use('/api/curriculum', curriculumRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/marks', marksRoutes);
 app.use('/api/finance', financeRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Global error handler — catches all unhandled async errors, never crashes the process
 app.use((err, req, res, next) => {
