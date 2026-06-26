@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { ClipboardCheck, Search, ChevronRight, AlertCircle, CheckCircle2, User } from 'lucide-react';
+import {
+  ClipboardCheck, Search, AlertCircle, CheckCircle2, User,
+  DollarSign, GraduationCap, Home, ShieldCheck, ChevronRight,
+  X, TrendingUp, FileText, BadgeCheck,
+} from 'lucide-react';
 import api from '../../services/api';
 import PageHeader from '../../components/PageHeader';
 import Spinner from '../../components/Spinner';
@@ -7,14 +11,15 @@ import Modal from '../../components/Modal';
 
 const inputCls = 'w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300';
 const labelCls = 'block text-xs font-medium text-gray-600 mb-1';
+
 function fmt(n) { return Number(n || 0).toLocaleString('en-UG', { minimumFractionDigits: 0 }); }
 
 const STAGES = [
-  { key: 'initiated',             label: 'INITIATED',    color: 'bg-gray-400' },
-  { key: 'accounts_cleared',      label: 'ACCOUNTS',     color: 'bg-amber-500' },
-  { key: 'academics_cleared',     label: 'ACADEMICS',    color: 'bg-blue-500' },
-  { key: 'accommodation_cleared', label: 'ACCOMMODATION',color: 'bg-purple-500' },
-  { key: 'fully_registered',      label: 'REGISTERED',   color: 'bg-green-500' },
+  { key: 'initiated',             label: 'INITIATED',      color: 'bg-gray-400',   dot: 'bg-gray-400' },
+  { key: 'accounts_cleared',      label: 'ACCOUNTS',       color: 'bg-amber-500',  dot: 'bg-amber-500' },
+  { key: 'academics_cleared',     label: 'ACADEMICS',      color: 'bg-blue-500',   dot: 'bg-blue-500' },
+  { key: 'accommodation_cleared', label: 'ACCOMMODATION',  color: 'bg-purple-500', dot: 'bg-purple-500' },
+  { key: 'fully_registered',      label: 'REGISTERED',     color: 'bg-emerald-500',dot: 'bg-emerald-500' },
 ];
 
 function StageProgress({ status }) {
@@ -23,41 +28,343 @@ function StageProgress({ status }) {
     <div className="flex items-center gap-0.5">
       {STAGES.map((s, i) => (
         <div key={s.key} title={s.label}
-          className={`h-2 flex-1 rounded-sm ${i <= idx ? s.color : 'bg-gray-200'}`}
-        />
+          className={`h-2 flex-1 rounded-sm ${i <= idx ? s.color : 'bg-gray-200'}`} />
       ))}
     </div>
   );
 }
 
-function StatCard({ label, value, color }) {
+function ClearanceMeter({ pct, hasWaiver }) {
+  const p = parseFloat(pct || 0);
+  const color = p >= 80 ? 'from-emerald-400 to-emerald-500'
+    : p >= 60 ? 'from-amber-400 to-amber-500'
+    : 'from-red-400 to-red-500';
+  const textColor = p >= 80 ? 'text-emerald-600' : p >= 60 ? 'text-amber-600' : 'text-red-600';
   return (
-    <div className={`rounded-xl p-3 text-white ${color}`}>
-      <p className="text-2xl font-bold">{String(value).padStart(2, '0')}</p>
-      <p className="text-xs font-semibold opacity-80 uppercase tracking-wide mt-0.5">{label}</p>
+    <div>
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs text-gray-500 font-medium">Fee Payment Progress</span>
+        <div className="flex items-center gap-2">
+          {hasWaiver && (
+            <span className="text-[10px] font-bold px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full">WAIVER</span>
+          )}
+          <span className={`text-lg font-bold ${textColor}`}>{p}%</span>
+        </div>
+      </div>
+      <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
+        <div className={`h-full bg-gradient-to-r ${color} rounded-full transition-all`}
+          style={{ width: `${Math.min(p, 100)}%` }} />
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+        <span>0%</span>
+        <span className="text-amber-500 font-semibold">60% min</span>
+        <span>100%</span>
+      </div>
     </div>
   );
 }
 
+// ── Stage modal configs ──────────────────────────────────────────────────────
+const STAGE_CONFIG = {
+  accounts: {
+    label: 'Accounts Clearance',
+    icon: DollarSign,
+    gradient: 'from-amber-600 to-amber-700',
+    btnColor: 'bg-amber-600 hover:bg-amber-500',
+    description: 'Verify fee payment and clear the student for academic registration.',
+  },
+  academics: {
+    label: 'Academics Clearance',
+    icon: GraduationCap,
+    gradient: 'from-blue-600 to-blue-700',
+    btnColor: 'bg-blue-600 hover:bg-blue-500',
+    description: 'Confirm course enrolment and clear the student for accommodation.',
+  },
+  accommodation: {
+    label: 'Accommodation Clearance',
+    icon: Home,
+    gradient: 'from-purple-600 to-purple-700',
+    btnColor: 'bg-purple-600 hover:bg-purple-500',
+    description: 'Confirm residence status and fully register the student.',
+  },
+};
+
+// ── Clearance Modal ──────────────────────────────────────────────────────────
+function ClearanceModal({ action, onClose, onSave, saving }) {
+  const { reg, type } = action;
+  const cfg = STAGE_CONFIG[type];
+  const Icon = cfg.icon;
+  const pct = parseFloat(reg.live_clearance_pct || 0);
+  const needsWaiver = type === 'accounts' && pct < 60 && !reg.financial_waiver;
+  const initials = `${reg.first_name?.[0] || ''}${reg.last_name?.[0] || ''}`;
+
+  const [form, setForm] = useState({
+    residence_status: reg.residence_status || 'non_resident',
+    registration_type: reg.registration_type || 'normal',
+    anomaly_comment: reg.anomaly_comment || '',
+    waiver_reason: reg.waiver_reason || '',
+    grant_waiver: false,
+  });
+  function setField(k, v) { setForm(f => ({ ...f, [k]: v })); }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (needsWaiver && !form.grant_waiver) {
+      alert('Student clearance is below 60%. You must grant a waiver or wait for payment.');
+      return;
+    }
+    if (form.grant_waiver && !form.waiver_reason.trim()) {
+      alert('Please provide a reason for the waiver.');
+      return;
+    }
+    onSave(form);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className={`bg-gradient-to-r ${cfg.gradient} p-5 rounded-t-2xl`}>
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 rounded-xl p-2.5">
+                <Icon size={20} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">{cfg.label}</h2>
+                <p className="text-xs text-white/70 mt-0.5">{cfg.description}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="text-white/70 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-5">
+          {/* Student Identity Card */}
+          <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-2xl border border-gray-100">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+              {initials}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-base font-bold text-gray-900">{reg.first_name} {reg.last_name}</h3>
+              <p className="text-sm text-gray-500 mt-0.5">{reg.programme_name || reg.programme_code}</p>
+              <div className="flex flex-wrap gap-3 mt-2">
+                {[
+                  { label: 'Student No', value: reg.student_no },
+                  { label: 'Year', value: `Year ${reg.year_of_study}` },
+                  { label: 'Semester', value: `Sem ${reg.semester}` },
+                  { label: 'Year', value: reg.academic_year_label },
+                  reg.nationality && { label: 'Nationality', value: reg.nationality },
+                  reg.student_type && { label: 'Type', value: reg.student_type },
+                ].filter(Boolean).map(({ label, value }) => (
+                  <div key={label} className="text-xs">
+                    <span className="text-gray-400">{label}: </span>
+                    <span className="font-semibold text-gray-700 capitalize">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Finance section (for all stages — context) */}
+          <div className="border border-gray-100 rounded-2xl p-4 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp size={14} className="text-gray-500" />
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Financial Status</p>
+              {reg.invoice_number && (
+                <span className="ml-auto text-[10px] text-gray-400 font-mono">{reg.invoice_number}</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-gray-50 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-400 mb-1">Total Billed</p>
+                <p className="text-sm font-bold text-gray-800">UGX {fmt(reg.total_fees)}</p>
+              </div>
+              <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-400 mb-1">Amount Paid</p>
+                <p className="text-sm font-bold text-emerald-700">UGX {fmt(reg.fees_paid)}</p>
+              </div>
+              <div className={`${parseFloat(reg.outstanding_balance) > 0 ? 'bg-red-50' : 'bg-gray-50'} rounded-xl p-3 text-center`}>
+                <p className="text-xs text-gray-400 mb-1">Outstanding</p>
+                <p className={`text-sm font-bold ${parseFloat(reg.outstanding_balance) > 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                  UGX {fmt(reg.outstanding_balance)}
+                </p>
+              </div>
+            </div>
+
+            <ClearanceMeter pct={reg.live_clearance_pct} hasWaiver={reg.financial_waiver} />
+          </div>
+
+          {/* Stage-specific fields */}
+          {type === 'accounts' && (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelCls}>Residence Plan</label>
+                  <select className={inputCls} value={form.residence_status} onChange={e => setField('residence_status', e.target.value)}>
+                    <option value="non_resident">Non-Resident (Day)</option>
+                    <option value="resident">Resident (Hall)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Registration Type</label>
+                  <select className={inputCls} value={form.registration_type} onChange={e => setField('registration_type', e.target.value)}>
+                    <option value="normal">Normal Registration</option>
+                    <option value="late">Late Registration</option>
+                    <option value="retake">Retake / Repeat</option>
+                    <option value="transfer">Transfer Student</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Waiver section — shown if needed */}
+              {needsWaiver && (
+                <div className="border border-red-200 rounded-2xl p-4 bg-red-50 space-y-3">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-bold text-red-700">Payment Below Threshold</p>
+                      <p className="text-xs text-red-600 mt-0.5">
+                        Student has paid <strong>{pct}%</strong> but minimum is <strong>60%</strong>.
+                        Grant a financial waiver to proceed with accounts clearance.
+                      </p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="checkbox" checked={form.grant_waiver} onChange={e => setField('grant_waiver', e.target.checked)} className="w-4 h-4 rounded" />
+                    <span className="text-sm font-semibold text-red-700">Grant Financial Waiver</span>
+                  </label>
+                  {form.grant_waiver && (
+                    <div>
+                      <label className={labelCls}>Waiver Reason *</label>
+                      <textarea className={`${inputCls} resize-none`} rows={2}
+                        value={form.waiver_reason}
+                        onChange={e => setField('waiver_reason', e.target.value)}
+                        placeholder="e.g. Scholarship student, payment plan approved by finance office…" />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Existing waiver notice */}
+              {reg.financial_waiver && (
+                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                  <ShieldCheck size={14} className="flex-shrink-0 mt-0.5 text-amber-600" />
+                  <span>Financial waiver already active: <em>{reg.waiver_reason || 'No reason recorded'}</em></span>
+                </div>
+              )}
+
+              <div>
+                <label className={labelCls}>Bill Anomaly Comment</label>
+                <textarea className={`${inputCls} resize-none`} rows={2}
+                  value={form.anomaly_comment}
+                  onChange={e => setField('anomaly_comment', e.target.value)}
+                  placeholder="Any billing discrepancies or special notes…" />
+              </div>
+            </>
+          )}
+
+          {type === 'academics' && (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Registration Type</label>
+                <select className={inputCls} value={form.registration_type} onChange={e => setField('registration_type', e.target.value)}>
+                  <option value="normal">Normal Registration</option>
+                  <option value="late">Late Registration</option>
+                  <option value="retake">Retake / Repeat</option>
+                  <option value="transfer">Transfer Student</option>
+                </select>
+              </div>
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
+                <FileText size={14} className="flex-shrink-0 mt-0.5 text-blue-600" />
+                <span>Confirm that the student's courses are enrolled and the academic office has verified their programme requirements for this semester.</span>
+              </div>
+              <div>
+                <label className={labelCls}>Notes</label>
+                <textarea className={`${inputCls} resize-none`} rows={2}
+                  value={form.anomaly_comment}
+                  onChange={e => setField('anomaly_comment', e.target.value)}
+                  placeholder="Any academic notes or exceptions…" />
+              </div>
+            </div>
+          )}
+
+          {type === 'accommodation' && (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>Confirmed Residence Plan</label>
+                <select className={inputCls} value={form.residence_status} onChange={e => setField('residence_status', e.target.value)}>
+                  <option value="non_resident">Non-Resident (Day Student)</option>
+                  <option value="resident">Resident (Hall Student)</option>
+                </select>
+              </div>
+              <div className="flex items-start gap-2 p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
+                <Home size={14} className="flex-shrink-0 mt-0.5 text-purple-600" />
+                <span>Clearing accommodation will mark the student as <strong>Fully Registered</strong>. Confirm residence status before proceeding.</span>
+              </div>
+              <div>
+                <label className={labelCls}>Notes</label>
+                <textarea className={`${inputCls} resize-none`} rows={2}
+                  value={form.anomaly_comment}
+                  onChange={e => setField('anomaly_comment', e.target.value)}
+                  placeholder="Hall block, room, or any accommodation notes…" />
+              </div>
+            </div>
+          )}
+
+          {/* Stage progress preview */}
+          <div className="border border-gray-100 rounded-2xl p-4">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Clearance Progress</p>
+            <StageProgress status={reg.status} />
+            <div className="flex justify-between mt-2">
+              {STAGES.map(s => (
+                <span key={s.key} className={`text-[9px] font-semibold uppercase tracking-wide ${s.key === reg.status ? 'text-blue-600' : 'text-gray-300'}`}>
+                  {s.label.split('').slice(0, 4).join('')}.
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-1 border-t border-gray-100">
+            <button type="button" onClick={onClose}
+              className="px-5 py-2.5 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 font-medium">
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || (needsWaiver && !form.grant_waiver)}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl disabled:opacity-50 transition-colors ${cfg.btnColor}`}>
+              <BadgeCheck size={15} />
+              {saving ? 'Clearing…' : `Clear ${STAGE_CONFIG[type].label.split(' ')[0]}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────────────────
 export default function RegistrationClearance() {
-  const [years, setYears] = useState([]);
-  const [filter, setFilter] = useState({ academic_year_id: '', semester: '1', status: '', search: '' });
-  const [stats, setStats] = useState(null);
+  const [years, setYears]     = useState([]);
+  const [filter, setFilter]   = useState({ academic_year_id: '', semester: '1', status: '', search: '' });
+  const [stats, setStats]     = useState(null);
   const [registrations, setRegistrations] = useState([]);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal]     = useState(0);
   const [loading, setLoading] = useState(false);
 
   // Initiate modal
-  const [initModal, setInitModal] = useState(false);
-  const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
+  const [initModal, setInitModal]         = useState(false);
+  const [query, setQuery]                 = useState('');
+  const [suggestions, setSuggestions]     = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const debounce = useRef(null);
+  const [saving, setSaving]               = useState(false);
+  const debounce                          = useRef(null);
 
-  // Clear-stage / waiver modal
-  const [actionModal, setActionModal] = useState(null); // { reg, type: 'accounts'|'academics'|'accommodation'|'waiver' }
-  const [waiverReason, setWaiverReason] = useState('');
+  // Stage clear modal
+  const [actionModal, setActionModal] = useState(null); // { reg, type }
 
   useEffect(() => {
     api.get('/academic/years').then(r => {
@@ -106,34 +413,32 @@ export default function RegistrationClearance() {
         academic_year_id: filter.academic_year_id,
         semester: parseInt(filter.semester),
       });
-      setInitModal(false);
-      setQuery(''); setSelectedStudent(null); setSuggestions([]);
+      setInitModal(false); setQuery(''); setSelectedStudent(null); setSuggestions([]);
       loadStats(); loadList();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to initiate registration');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
-  async function doStageAction() {
+  async function doStageAction(formData) {
     if (!actionModal) return;
     setSaving(true);
     try {
-      if (actionModal.type === 'waiver') {
-        if (!waiverReason.trim()) { alert('Reason is required'); setSaving(false); return; }
-        await api.post(`/registration/${actionModal.reg.id}/waiver`, { reason: waiverReason });
-      } else {
-        await api.post(`/registration/${actionModal.reg.id}/clear-stage`, { stage: actionModal.type });
+      // If waiver is being granted inline, do that first
+      if (formData.grant_waiver && formData.waiver_reason) {
+        await api.post(`/registration/${actionModal.reg.id}/waiver`, { reason: formData.waiver_reason });
       }
+      await api.post(`/registration/${actionModal.reg.id}/clear-stage`, {
+        stage: actionModal.type,
+        residence_status: formData.residence_status,
+        registration_type: formData.registration_type,
+        anomaly_comment: formData.anomaly_comment || null,
+      });
       setActionModal(null);
-      setWaiverReason('');
       loadStats(); loadList();
     } catch (err) {
       alert(err.response?.data?.error || 'Action failed');
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   function nextAction(reg) {
@@ -141,30 +446,36 @@ export default function RegistrationClearance() {
       initiated: 'accounts',
       accounts_cleared: 'academics',
       academics_cleared: 'accommodation',
-      accommodation_cleared: null,
-      fully_registered: null,
     };
     return map[reg.status] || null;
   }
 
   const yearLabel = years.find(y => y.id === filter.academic_year_id)?.label || '';
 
+  const STAT_CARDS = [
+    { label: 'Initiated',      key: 'initiated',             gradient: 'from-gray-600 to-gray-700' },
+    { label: 'Accounts',       key: 'accounts_cleared',      gradient: 'from-amber-500 to-amber-600' },
+    { label: 'Academics',      key: 'academics_cleared',     gradient: 'from-blue-600 to-blue-700' },
+    { label: 'Accommodation',  key: 'accommodation_cleared', gradient: 'from-purple-600 to-purple-700' },
+    { label: 'Fully Reg.',     key: 'fully_registered',      gradient: 'from-emerald-600 to-emerald-700' },
+  ];
+
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         icon={ClipboardCheck}
         title="Registration Clearance"
-        subtitle="CURRENT SEMESTER REGISTRATION"
+        subtitle={`${yearLabel} · Semester ${filter.semester}`}
         actions={
           <button onClick={() => setInitModal(true)} disabled={!filter.academic_year_id}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
             + Initiate Registration
           </button>
         }
       />
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-5">
+      <div className="flex flex-wrap gap-3">
         <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
           value={filter.academic_year_id} onChange={e => setFilter(f => ({ ...f, academic_year_id: e.target.value }))}>
           <option value="">Select Year</option>
@@ -186,87 +497,122 @@ export default function RegistrationClearance() {
           <input className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
             placeholder="Search name or student no…"
             value={filter.search}
-            onChange={e => setFilter(f => ({ ...f, search: e.target.value }))}
-          />
+            onChange={e => setFilter(f => ({ ...f, search: e.target.value }))} />
         </div>
       </div>
 
-      {/* Stats header — mimics Alpha MIS panel */}
+      {/* Stats bar */}
       {stats && (
-        <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 rounded-2xl shadow-xl mb-5 p-5">
-          <p className="text-xs font-semibold text-blue-300/70 uppercase tracking-widest mb-1">Main Campus Registration</p>
-          <p className="text-sm font-bold text-white mb-4">{yearLabel} · Semester {filter.semester} · {stats.total} students</p>
-          <div className="grid grid-cols-5 gap-3">
-            <StatCard label="Initiated"      value={stats.initiated}             color="bg-gray-600/60" />
-            <StatCard label="Accounts"       value={stats.accounts_cleared}      color="bg-amber-600/70" />
-            <StatCard label="Academics"      value={stats.academics_cleared}     color="bg-blue-600/70" />
-            <StatCard label="Accommodation"  value={stats.accommodation_cleared} color="bg-purple-600/70" />
-            <StatCard label="Fully Reg."     value={stats.fully_registered}      color="bg-green-600/70" />
+        <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 rounded-2xl shadow-xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs font-semibold text-blue-300/70 uppercase tracking-widest">Clearance Pipeline</p>
+              <p className="text-sm font-bold text-white mt-0.5">{yearLabel} · Semester {filter.semester}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-white">{stats.total || 0}</p>
+              <p className="text-xs text-blue-300/60">Total</p>
+            </div>
           </div>
+          <div className="grid grid-cols-5 gap-3">
+            {STAT_CARDS.map(sc => (
+              <div key={sc.key} className={`bg-gradient-to-br ${sc.gradient} rounded-xl p-3 text-white`}>
+                <p className="text-2xl font-bold">{String(stats[sc.key] || 0).padStart(2, '0')}</p>
+                <p className="text-[10px] font-semibold opacity-70 uppercase tracking-wide mt-0.5">{sc.label}</p>
+              </div>
+            ))}
+          </div>
+          {/* Progress bar */}
+          {(stats.total || 0) > 0 && (
+            <div className="mt-4 flex h-2 rounded-full overflow-hidden gap-0.5">
+              {STAT_CARDS.map((sc, i) => {
+                const colors = ['bg-gray-500','bg-amber-500','bg-blue-500','bg-purple-500','bg-emerald-500'];
+                const w = Math.round(((stats[sc.key] || 0) / stats.total) * 100);
+                return w > 0 ? <div key={sc.key} className={`${colors[i]} transition-all`} style={{ width: `${w}%` }} /> : null;
+              })}
+            </div>
+          )}
         </div>
       )}
 
-      {/* Clearance table */}
-      {loading ? <Spinner className="py-10" /> : (
+      {/* Table */}
+      {loading ? <div className="py-16 flex justify-center"><Spinner /></div> : (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide">Acc. No</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide">Name</th>
-                <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Progress</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide">Programme</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide">Fees (UGX)</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">Paid %</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">Waiver</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">Actions</th>
+              <tr className="bg-gradient-to-r from-slate-800 to-slate-700 text-white">
+                <th className="text-left px-4 py-3 text-xs font-semibold">Student</th>
+                <th className="px-4 py-3 text-xs font-semibold w-44">Progress</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold hidden lg:table-cell">Programme</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold">Billed</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold">Paid</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold w-20">Clear %</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold w-28">Action</th>
               </tr>
             </thead>
             <tbody>
               {registrations.length === 0 && (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400 text-sm">No registrations found. Click "Initiate Registration" to add students.</td></tr>
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-gray-400 text-sm">
+                    No registrations found. Click "+ Initiate Registration" to add students.
+                  </td>
+                </tr>
               )}
               {registrations.map((reg, i) => {
                 const action = nextAction(reg);
                 const pct = parseFloat(reg.live_clearance_pct || 0);
+                const isFullyReg = reg.status === 'fully_registered';
+                const initials = `${reg.first_name?.[0] || ''}${reg.last_name?.[0] || ''}`;
+                const code = (reg.first_name?.charCodeAt(0) || 65) % 5;
+                const avatarColors = ['bg-blue-100 text-blue-700','bg-indigo-100 text-indigo-700','bg-amber-100 text-amber-700','bg-emerald-100 text-emerald-700','bg-rose-100 text-rose-700'];
                 return (
-                  <tr key={reg.id} className={i % 2 === 0 ? 'bg-white hover:bg-blue-50/20' : 'bg-gray-50/50 hover:bg-blue-50/20'}>
-                    <td className="px-4 py-3 font-mono text-xs font-semibold text-blue-700">{reg.student_no}</td>
+                  <tr key={reg.id} className={`border-t border-gray-50 hover:bg-blue-50/20 transition-colors ${i%2===1?'bg-gray-50/30':''}`}>
                     <td className="px-4 py-3">
-                      <p className="font-medium text-gray-800">{reg.first_name} {reg.last_name}</p>
-                      <p className="text-xs text-gray-400">Year {reg.year_of_study}</p>
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-full ${avatarColors[code]} flex items-center justify-center text-xs font-bold flex-shrink-0`}>
+                          {initials}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800 text-sm">{reg.first_name} {reg.last_name}</p>
+                          <p className="text-[10px] text-gray-400 font-mono">{reg.student_no} · Yr {reg.year_of_study}</p>
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 w-36">
+                    <td className="px-4 py-3">
                       <StageProgress status={reg.status} />
-                      <p className="text-[10px] text-gray-400 mt-1 capitalize text-center">{reg.status.replace(/_/g, ' ')}</p>
+                      <p className="text-[10px] text-gray-400 mt-1 text-center capitalize">{(reg.status||'').replace(/_/g,' ')}</p>
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-600">{reg.programme_code}</td>
-                    <td className="px-4 py-3 text-right font-mono text-xs text-gray-700">{fmt(reg.total_fees)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 hidden lg:table-cell">
+                      <span className="font-mono font-semibold text-gray-700">{reg.programme_code}</span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-gray-600">{fmt(reg.total_fees)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs text-emerald-700 font-semibold">{fmt(reg.fees_paid)}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pct >= 100 ? 'bg-green-100 text-green-700' : pct >= 60 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-600'}`}>
-                        {pct}%
-                      </span>
+                      <div className="flex flex-col items-center gap-1">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pct >= 100 ? 'bg-emerald-100 text-emerald-700' : pct >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-600'}`}>
+                          {pct}%
+                        </span>
+                        {reg.financial_waiver && (
+                          <span className="text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 rounded-full">WAIVER</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-center">
-                      {reg.financial_waiver
-                        ? <CheckCircle2 size={14} className="text-green-500 mx-auto" />
-                        : pct < 60
-                          ? <button onClick={() => setActionModal({ reg, type: 'waiver' })} className="text-xs text-amber-600 hover:text-amber-800 font-semibold underline">Grant</button>
-                          : <span className="text-gray-300 text-xs">—</span>
-                      }
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {action && reg.status !== 'fully_registered' && (
+                      {action ? (
                         <button
                           onClick={() => setActionModal({ reg, type: action })}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-800 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                          className={`inline-flex items-center gap-1 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors ${STAGE_CONFIG[action].btnColor}`}
                         >
-                          Clear <span className="capitalize">{action}</span> <ChevronRight size={11} />
+                          {action === 'accounts' && <DollarSign size={11} />}
+                          {action === 'academics' && <GraduationCap size={11} />}
+                          {action === 'accommodation' && <Home size={11} />}
+                          Clear
                         </button>
-                      )}
-                      {reg.status === 'fully_registered' && (
-                        <span className="text-xs font-semibold text-green-600">✓ Complete</span>
-                      )}
+                      ) : isFullyReg ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                          <CheckCircle2 size={13} /> Done
+                        </span>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -274,8 +620,9 @@ export default function RegistrationClearance() {
             </tbody>
           </table>
           {total > 0 && (
-            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
-              Showing {registrations.length} of {total} registrations
+            <div className="px-4 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+              <span>Showing {registrations.length} of {total} registrations</span>
+              {total > 50 && <span className="text-blue-500 font-medium">Use search to filter</span>}
             </div>
           )}
         </div>
@@ -286,14 +633,13 @@ export default function RegistrationClearance() {
         <Modal title="Initiate Registration" onClose={() => { setInitModal(false); setQuery(''); setSelectedStudent(null); setSuggestions([]); }}>
           <div className="space-y-4">
             <div className="relative">
-              <label className={labelCls}>Student</label>
+              <label className={labelCls}>Search Student</label>
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                 <input
                   className="w-full border border-gray-200 rounded-xl pl-8 pr-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
                   placeholder="Search by name or student number…"
-                  value={query} onChange={handleQuery} autoComplete="off"
-                />
+                  value={query} onChange={handleQuery} autoComplete="off" />
               </div>
               {suggestions.length > 0 && (
                 <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
@@ -313,10 +659,10 @@ export default function RegistrationClearance() {
             </div>
 
             {selectedStudent && (
-              <div className="p-3 bg-blue-50 rounded-xl text-sm text-blue-800">
-                <p className="font-semibold">{selectedStudent.first_name} {selectedStudent.last_name}</p>
-                <p className="text-xs text-blue-600">{selectedStudent.student_no} · {selectedStudent.programme_code}</p>
-                <p className="text-xs text-blue-500 mt-1">Clearance % will be auto-fetched from invoice for {yearLabel} Sem {filter.semester}</p>
+              <div className="p-3 bg-blue-50 rounded-xl border border-blue-100">
+                <p className="text-sm font-semibold text-blue-800">{selectedStudent.first_name} {selectedStudent.last_name}</p>
+                <p className="text-xs text-blue-600 mt-0.5">{selectedStudent.student_no} · {selectedStudent.programme_code} · Year {selectedStudent.year_of_study}</p>
+                <p className="text-xs text-blue-400 mt-1">Will initiate for {yearLabel}, Semester {filter.semester}</p>
               </div>
             )}
 
@@ -325,62 +671,21 @@ export default function RegistrationClearance() {
                 className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
               <button onClick={initiateReg} disabled={saving || !selectedStudent}
                 className="px-4 py-2 text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-white rounded-xl disabled:opacity-60">
-                {saving ? 'Initiating…' : 'Initiate'}
+                {saving ? 'Initiating…' : 'Initiate Registration'}
               </button>
             </div>
           </div>
         </Modal>
       )}
 
-      {/* Stage clear / waiver modal */}
+      {/* Stage Clearance Modal */}
       {actionModal && (
-        <Modal
-          title={actionModal.type === 'waiver' ? 'Grant Financial Waiver' : `Clear ${actionModal.type.charAt(0).toUpperCase() + actionModal.type.slice(1)} Stage`}
-          onClose={() => { setActionModal(null); setWaiverReason(''); }}
-        >
-          <div className="space-y-4">
-            <div className="p-3 bg-gray-50 rounded-xl text-sm">
-              <p className="font-semibold text-gray-800">{actionModal.reg.first_name} {actionModal.reg.last_name}</p>
-              <p className="text-xs text-gray-500">{actionModal.reg.student_no} · {actionModal.reg.programme_code}</p>
-              {actionModal.type !== 'waiver' && (
-                <div className="mt-2 flex gap-4 text-xs">
-                  <span>Fees: <strong>UGX {fmt(actionModal.reg.total_fees)}</strong></span>
-                  <span>Paid: <strong className={parseFloat(actionModal.reg.live_clearance_pct) >= 60 ? 'text-green-700' : 'text-red-600'}>{actionModal.reg.live_clearance_pct}%</strong></span>
-                  {actionModal.reg.financial_waiver && <span className="text-amber-700 font-semibold">⚠ Waiver active</span>}
-                </div>
-              )}
-            </div>
-
-            {actionModal.type === 'waiver' && (
-              <>
-                <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                  <span>A financial waiver allows this student to proceed through accounts clearance even if their fee payment is below the minimum threshold.</span>
-                </div>
-                <div>
-                  <label className={labelCls}>Reason for Waiver</label>
-                  <textarea className={inputCls + ' resize-none'} rows={3} value={waiverReason} onChange={e => setWaiverReason(e.target.value)} placeholder="e.g. Scholarship student, payment plan approved, etc." />
-                </div>
-              </>
-            )}
-
-            {actionModal.type !== 'waiver' && actionModal.type === 'accounts' && !actionModal.reg.financial_waiver && parseFloat(actionModal.reg.live_clearance_pct) < 60 && (
-              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                <span>Student has only paid <strong>{actionModal.reg.live_clearance_pct}%</strong>. Minimum is 60%. Grant a waiver first or wait for payment.</span>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => { setActionModal(null); setWaiverReason(''); }}
-                className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
-              <button onClick={doStageAction} disabled={saving}
-                className={`px-4 py-2 text-sm font-semibold text-white rounded-xl disabled:opacity-60 ${actionModal.type === 'waiver' ? 'bg-amber-600 hover:bg-amber-500' : 'bg-green-600 hover:bg-green-500'}`}>
-                {saving ? 'Saving…' : actionModal.type === 'waiver' ? 'Grant Waiver' : 'Confirm Clearance'}
-              </button>
-            </div>
-          </div>
-        </Modal>
+        <ClearanceModal
+          action={actionModal}
+          onClose={() => setActionModal(null)}
+          onSave={doStageAction}
+          saving={saving}
+        />
       )}
     </div>
   );

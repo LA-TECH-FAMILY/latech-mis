@@ -61,7 +61,7 @@ async function initiateRegistration(req, res) {
 
 async function clearStage(req, res) {
   const { id } = req.params;
-  const { stage } = req.body; // 'accounts' | 'academics' | 'accommodation'
+  const { stage, residence_status, registration_type, anomaly_comment } = req.body;
 
   const allowed = ['accounts', 'academics', 'accommodation'];
   if (!allowed.includes(stage)) return res.status(400).json({ error: 'Invalid stage' });
@@ -97,9 +97,13 @@ async function clearStage(req, res) {
 
   await db.query(
     `UPDATE student_registrations
-     SET ${stage}_cleared_by = $1, ${stage}_cleared_at = NOW(), status = $2
+     SET ${stage}_cleared_by = $1, ${stage}_cleared_at = NOW(), status = $2,
+         residence_status = COALESCE($4, residence_status),
+         registration_type = COALESCE($5, registration_type),
+         anomaly_comment = COALESCE($6, anomaly_comment)
      WHERE id = $3`,
-    [req.user.id, nextStatus, id]
+    [req.user.id, nextStatus, id,
+     residence_status || null, registration_type || null, anomaly_comment || null]
   );
 
   // If fully registered, register courses too
@@ -169,17 +173,18 @@ async function listRegistrations(req, res) {
 
   const { rows } = await db.query(
     `SELECT
-       sr.id, sr.status, sr.clearance_percent, sr.financial_waiver,
-       sr.accounts_cleared_at, sr.academics_cleared_at, sr.accommodation_cleared_at,
-       sr.initiated_at, sr.registered_at,
+       sr.id, sr.student_id, sr.semester, sr.status, sr.clearance_percent, sr.financial_waiver,
+       sr.waiver_reason, sr.accounts_cleared_at, sr.academics_cleared_at, sr.accommodation_cleared_at,
+       sr.initiated_at, sr.registered_at, sr.residence_status, sr.registration_type, sr.anomaly_comment,
        s.student_no, s.year_of_study, s.nationality, s.student_type,
        u.first_name, u.last_name, u.email,
        p.name AS programme_name, p.code AS programme_code,
        ay.label AS academic_year_label,
        COALESCE(inv.total_amount, 0) AS total_fees,
        COALESCE(inv.amount_paid, 0) AS fees_paid,
+       COALESCE(inv.total_amount, 0) - COALESCE(inv.amount_paid, 0) AS outstanding_balance,
        COALESCE(inv.clearance_percent, 0) AS live_clearance_pct,
-       inv.status AS invoice_status
+       inv.status AS invoice_status, inv.invoice_number
      FROM student_registrations sr
      JOIN students s ON s.id = sr.student_id
      JOIN users u ON u.id = s.user_id
