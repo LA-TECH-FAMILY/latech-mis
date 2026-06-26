@@ -18,7 +18,9 @@ router.post('/departments', admin, wrap(c.createDepartment));
 router.put('/departments/:id', admin, wrap(c.updateDepartment));
 
 // Programmes
+router.get('/programmes/stats', wrap(c.getProgrammeStats));
 router.get('/programmes', wrap(c.listProgrammes));
+router.get('/programmes/:id', wrap(c.getProgramme));
 router.post('/programmes', admin, wrap(c.createProgramme));
 router.put('/programmes/:id', admin, wrap(c.updateProgramme));
 

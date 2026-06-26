@@ -67,37 +67,102 @@ async function updateDepartment(req, res) {
 
 // ---- Programmes ----
 async function listProgrammes(req, res) {
-  const { department_id } = req.query;
-  let query = `SELECT p.*, d.name AS department_name, f.name AS faculty_name
-               FROM programmes p JOIN departments d ON d.id = p.department_id
-               JOIN faculties f ON f.id = d.faculty_id WHERE p.is_active = TRUE`;
+  const { department_id, faculty_id, level, session, search } = req.query;
   const params = [];
-  if (department_id) { params.push(department_id); query += ` AND p.department_id = $${params.length}`; }
-  query += ' ORDER BY p.name';
-  const { rows } = await db.query(query, params);
+  const where = ['p.is_active = TRUE'];
+
+  if (department_id) { params.push(department_id); where.push(`p.department_id = $${params.length}`); }
+  if (faculty_id)    { params.push(faculty_id);    where.push(`d.faculty_id = $${params.length}`); }
+  if (level)         { params.push(level);          where.push(`p.level = $${params.length}`); }
+  if (session)       { params.push(session);        where.push(`p.session = $${params.length}`); }
+  if (search) {
+    params.push(`%${search}%`);
+    where.push(`(p.name ILIKE $${params.length} OR p.code ILIKE $${params.length} OR p.abbreviation ILIKE $${params.length})`);
+  }
+
+  const { rows } = await db.query(
+    `SELECT p.*, d.name AS department_name, d.faculty_id,
+            f.name AS faculty_name, f.code AS faculty_code,
+            (SELECT COUNT(*) FROM students s WHERE s.programme_id = p.id AND s.status = 'active') AS active_students,
+            (SELECT COUNT(*) FROM intakes i WHERE i.programme_id = p.id) AS total_intakes
+     FROM programmes p
+     JOIN departments d ON d.id = p.department_id
+     JOIN faculties f ON f.id = d.faculty_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY f.name, d.name, p.level, p.name`,
+    params
+  );
   res.json(rows);
 }
 
+async function getProgrammeStats(req, res) {
+  const { rows } = await db.query(
+    `SELECT
+       COALESCE(level, award_type, 'unknown') AS level,
+       COUNT(*) AS count
+     FROM programmes WHERE is_active = TRUE
+     GROUP BY COALESCE(level, award_type, 'unknown')
+     ORDER BY count DESC`
+  );
+  res.json(rows);
+}
+
+async function getProgramme(req, res) {
+  const { id } = req.params;
+  const prog = (await db.query(
+    `SELECT p.*, d.name AS department_name, d.faculty_id,
+            f.name AS faculty_name, f.code AS faculty_code
+     FROM programmes p
+     JOIN departments d ON d.id = p.department_id
+     JOIN faculties f ON f.id = d.faculty_id
+     WHERE p.id = $1`,
+    [id]
+  )).rows[0];
+  if (!prog) return res.status(404).json({ error: 'Programme not found' });
+
+  const intakes = (await db.query(
+    `SELECT i.*, ay.label AS academic_year_label
+     FROM intakes i JOIN academic_years ay ON ay.id = i.academic_year_id
+     WHERE i.programme_id = $1
+     ORDER BY ay.start_date DESC, i.intake_month`,
+    [id]
+  )).rows;
+
+  res.json({ ...prog, intakes });
+}
+
 async function createProgramme(req, res) {
-  const { department_id, code, name, award_type, duration_years, study_mode } = req.body;
-  if (!department_id || !code || !name || !award_type || !duration_years || !study_mode) {
-    return res.status(400).json({ error: 'All fields are required' });
+  const { department_id, code, name, abbreviation, level, award_type, duration_years, study_mode, session, programme_type } = req.body;
+  if (!department_id || !code || !name || !duration_years) {
+    return res.status(400).json({ error: 'department_id, code, name, duration_years are required' });
   }
   const { rows } = await db.query(
-    `INSERT INTO programmes (department_id, code, name, award_type, duration_years, study_mode)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [department_id, code.toUpperCase(), name, award_type, duration_years, study_mode]
+    `INSERT INTO programmes (department_id, code, name, abbreviation, level, award_type, duration_years, study_mode, session, programme_type)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [department_id, code.toUpperCase(), name, abbreviation || null,
+     level || 'bachelors', award_type || level || 'degree',
+     duration_years, study_mode || session || 'full_time',
+     session || 'day', programme_type || 'taught']
   );
   res.status(201).json(rows[0]);
 }
 
 async function updateProgramme(req, res) {
   const { id } = req.params;
-  const { name, duration_years, study_mode, is_active } = req.body;
+  const { name, abbreviation, level, duration_years, study_mode, session, programme_type, is_active } = req.body;
   await db.query(
-    `UPDATE programmes SET name = COALESCE($1, name), duration_years = COALESCE($2, duration_years),
-     study_mode = COALESCE($3, study_mode), is_active = COALESCE($4, is_active), updated_at = NOW() WHERE id = $5`,
-    [name, duration_years, study_mode, is_active, id]
+    `UPDATE programmes SET
+       name            = COALESCE($1, name),
+       abbreviation    = COALESCE($2, abbreviation),
+       level           = COALESCE($3, level),
+       duration_years  = COALESCE($4, duration_years),
+       study_mode      = COALESCE($5, study_mode),
+       session         = COALESCE($6, session),
+       programme_type  = COALESCE($7, programme_type),
+       is_active       = COALESCE($8, is_active),
+       updated_at      = NOW()
+     WHERE id = $9`,
+    [name, abbreviation, level, duration_years, study_mode, session, programme_type, is_active, id]
   );
   res.json({ message: 'Programme updated' });
 }
