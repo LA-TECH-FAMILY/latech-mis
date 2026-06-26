@@ -23,6 +23,7 @@ import StudentResults from './pages/Marks/StudentResults';
 import RegistrationWindows from './pages/Registration/RegistrationWindows';
 import RegisterStudent from './pages/Registration/RegisterStudent';
 import RegistrationClearance from './pages/Registration/RegistrationClearance';
+import InitiateRegistration from './pages/Registration/InitiateRegistration';
 import StudentList from './pages/Students/StudentList';
 import UserList from './pages/Users/UserList';
 import NewUser from './pages/Users/NewUser';
@@ -78,6 +79,7 @@ function AppRoutes() {
       <PrivateRoute path="/students"><StudentList /></PrivateRoute>
 
       {/* Registration */}
+      <PrivateRoute path="/registration/initiate/:student_id"><InitiateRegistration /></PrivateRoute>
       <PrivateRoute path="/registration/clearance"><RegistrationClearance /></PrivateRoute>
       <PrivateRoute path="/registration/waivers"><RegistrationClearance /></PrivateRoute>
       <PrivateRoute path="/registration/windows"><RegistrationWindows /></PrivateRoute>

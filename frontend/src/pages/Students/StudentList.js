@@ -297,8 +297,8 @@ export default function StudentList() {
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-center gap-1.5">
                       <button
-                        onClick={() => history.push('/registration/clearance')}
-                        title="Registration Clearance"
+                        onClick={() => history.push(`/registration/initiate/${s.student_id}`)}
+                        title="Initiate Registration"
                         className="p-1.5 bg-slate-100 hover:bg-slate-800 hover:text-white text-slate-600 rounded-lg transition-colors"
                       >
                         <ClipboardCheck size={13} />
