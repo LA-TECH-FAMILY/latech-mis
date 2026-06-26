@@ -168,4 +168,45 @@ async function searchStudents(req, res) {
   res.json(rows);
 }
 
-module.exports = { listUsers, getUser, createUser, updateUser, assignRoles, listRoles, searchStudents };
+async function listStudents(req, res) {
+  const { search, programme_id, year_of_study, status, page = 1, limit = 50 } = req.query;
+  const offset = (page - 1) * limit;
+  const params = [];
+  const where = ['1=1'];
+
+  if (search) {
+    params.push(`%${search}%`);
+    where.push(`(s.student_no ILIKE $${params.length} OR u.first_name ILIKE $${params.length} OR u.last_name ILIKE $${params.length} OR (u.first_name || ' ' || u.last_name) ILIKE $${params.length} OR u.email ILIKE $${params.length})`);
+  }
+  if (programme_id) { params.push(programme_id); where.push(`s.programme_id = $${params.length}`); }
+  if (year_of_study) { params.push(year_of_study); where.push(`s.year_of_study = $${params.length}`); }
+  if (status) { params.push(status); where.push(`s.status = $${params.length}`); }
+
+  const { rows } = await db.query(
+    `SELECT s.id AS student_id, s.student_no, s.year_of_study, s.status AS student_status,
+            s.student_type, s.nationality, s.enrollment_date,
+            u.id AS user_id, u.first_name, u.last_name, u.email, u.phone,
+            p.name AS programme_name, p.code AS programme_code,
+            f.name AS faculty_name,
+            i.intake_label
+     FROM students s
+     JOIN users u ON u.id = s.user_id
+     JOIN programmes p ON p.id = s.programme_id
+     LEFT JOIN departments d ON d.id = p.department_id
+     LEFT JOIN faculties f ON f.id = d.faculty_id
+     LEFT JOIN intakes i ON i.id = s.intake_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY s.student_no ASC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
+  );
+
+  const count = (await db.query(
+    `SELECT COUNT(*) AS total FROM students s JOIN users u ON u.id = s.user_id WHERE ${where.join(' AND ')}`,
+    params
+  )).rows[0].total;
+
+  res.json({ data: rows, total: parseInt(count), page: parseInt(page), limit: parseInt(limit) });
+}
+
+module.exports = { listUsers, getUser, createUser, updateUser, assignRoles, listRoles, searchStudents, listStudents };

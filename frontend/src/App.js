@@ -23,6 +23,7 @@ import StudentResults from './pages/Marks/StudentResults';
 import RegistrationWindows from './pages/Registration/RegistrationWindows';
 import RegisterStudent from './pages/Registration/RegisterStudent';
 import RegistrationClearance from './pages/Registration/RegistrationClearance';
+import StudentList from './pages/Students/StudentList';
 import UserList from './pages/Users/UserList';
 import NewUser from './pages/Users/NewUser';
 import FeeStructure from './pages/Finance/FeeStructure';
@@ -71,6 +72,9 @@ function AppRoutes() {
       {/* Curriculum */}
       <PrivateRoute path="/curriculum/courses"><Courses /></PrivateRoute>
       <PrivateRoute path="/curriculum/programmes"><ProgrammeCurriculum /></PrivateRoute>
+
+      {/* Students */}
+      <PrivateRoute path="/students"><StudentList /></PrivateRoute>
 
       {/* Registration */}
       <PrivateRoute path="/registration/clearance"><RegistrationClearance /></PrivateRoute>

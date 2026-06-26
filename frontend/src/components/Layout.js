@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   FileText, PenLine, Building2, ChevronDown, ChevronRight,
-  LogOut, Menu, X, School, DollarSign
+  LogOut, Menu, X, School, DollarSign, UserCheck
 } from 'lucide-react';
 
 const NAV = [
@@ -33,6 +33,14 @@ const NAV = [
     children: [
       { label: 'Applicants', path: '/admissions' },
       { label: 'New Application', path: '/admissions/new' },
+    ],
+  },
+  {
+    label: 'Student Records',
+    icon: UserCheck,
+    roles: ['admin', 'registrar', 'finance_officer', 'hod', 'dean'],
+    children: [
+      { label: 'All Students', path: '/students' },
     ],
   },
   {
