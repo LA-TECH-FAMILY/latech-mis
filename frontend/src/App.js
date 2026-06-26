@@ -22,6 +22,7 @@ import MarkApproval from './pages/Marks/MarkApproval';
 import StudentResults from './pages/Marks/StudentResults';
 import RegistrationWindows from './pages/Registration/RegistrationWindows';
 import RegisterStudent from './pages/Registration/RegisterStudent';
+import RegistrationClearance from './pages/Registration/RegistrationClearance';
 import UserList from './pages/Users/UserList';
 import NewUser from './pages/Users/NewUser';
 import FeeStructure from './pages/Finance/FeeStructure';
@@ -72,6 +73,8 @@ function AppRoutes() {
       <PrivateRoute path="/curriculum/programmes"><ProgrammeCurriculum /></PrivateRoute>
 
       {/* Registration */}
+      <PrivateRoute path="/registration/clearance"><RegistrationClearance /></PrivateRoute>
+      <PrivateRoute path="/registration/waivers"><RegistrationClearance /></PrivateRoute>
       <PrivateRoute path="/registration/windows"><RegistrationWindows /></PrivateRoute>
       <PrivateRoute path="/registration/register"><RegisterStudent /></PrivateRoute>
 

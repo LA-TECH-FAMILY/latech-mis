@@ -232,9 +232,24 @@ CREATE TABLE student_registrations (
   student_id UUID NOT NULL REFERENCES students(id),
   academic_year_id UUID NOT NULL REFERENCES academic_years(id),
   semester INT NOT NULL CHECK (semester IN (1, 2, 3)),
-  clearance_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'provisional', 'full', 'rejected')),
+  clearance_percent NUMERIC(5,2) NOT NULL DEFAULT 0,  -- pulled from invoice at initiation
+  status VARCHAR(30) NOT NULL DEFAULT 'initiated'
+    CHECK (status IN ('initiated','accounts_cleared','academics_cleared','accommodation_cleared','fully_registered','rejected','withdrawn')),
+  initiated_by UUID REFERENCES users(id),
+  initiated_at TIMESTAMPTZ DEFAULT NOW(),
+  -- Stage clearances
+  accounts_cleared_by UUID REFERENCES users(id),
+  accounts_cleared_at TIMESTAMPTZ,
+  academics_cleared_by UUID REFERENCES users(id),
+  academics_cleared_at TIMESTAMPTZ,
+  accommodation_cleared_by UUID REFERENCES users(id),
+  accommodation_cleared_at TIMESTAMPTZ,
+  -- Financial waiver
+  financial_waiver BOOLEAN NOT NULL DEFAULT FALSE,
+  waiver_reason TEXT,
+  waiver_granted_by UUID REFERENCES users(id),
+  waiver_granted_at TIMESTAMPTZ,
+  notes TEXT,
   registered_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE (student_id, academic_year_id, semester)
 );

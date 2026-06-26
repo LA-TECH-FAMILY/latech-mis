@@ -47,10 +47,11 @@ const NAV = [
   {
     label: 'Registration',
     icon: ClipboardList,
-    roles: ['admin', 'registrar', 'student'],
+    roles: ['admin', 'registrar', 'finance_officer'],
     children: [
+      { label: 'Registration Clearance', path: '/registration/clearance' },
+      { label: 'Financial Waiver', path: '/registration/waivers' },
       { label: 'Windows', path: '/registration/windows' },
-      { label: 'Register Student', path: '/registration/register' },
     ],
   },
   {
