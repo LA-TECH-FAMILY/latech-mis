@@ -111,6 +111,12 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
     anomaly_comment: reg.anomaly_comment || '',
     waiver_reason: reg.waiver_reason || '',
     grant_waiver: false,
+    hall: reg.hall || '',
+    block: reg.block || '',
+    room_number: reg.room_number || '',
+    bed: reg.bed || '',
+    room_type: reg.room_type || 'double',
+    meal_plan: reg.meal_plan || false,
   });
   function setField(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -141,7 +147,7 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${type === 'academics' ? 'max-w-3xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${type !== 'accounts' ? 'max-w-3xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto`}>
         {/* Modal Header */}
         <div className={`bg-gradient-to-r ${cfg.gradient} p-5 rounded-t-2xl`}>
           <div className="flex items-start justify-between">
@@ -445,24 +451,173 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
           )}
 
           {type === 'accommodation' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Residence type selector — drives conditional fields */}
               <div>
-                <label className={labelCls}>Confirmed Residence Plan</label>
-                <select className={inputCls} value={form.residence_status} onChange={e => setField('residence_status', e.target.value)}>
-                  <option value="non_resident">Non-Resident (Day Student)</option>
-                  <option value="resident">Resident (Hall Student)</option>
-                </select>
+                <label className={labelCls}>Residence Status</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'non_resident', label: 'Day Student', icon: '🏠', sub: 'Commutes from home' },
+                    { value: 'resident',     label: 'Hall Resident', icon: '🏢', sub: 'Lives on campus' },
+                  ].map(opt => (
+                    <button key={opt.value} type="button"
+                      onClick={() => setField('residence_status', opt.value)}
+                      className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${
+                        form.residence_status === opt.value
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 bg-white hover:border-purple-200'
+                      }`}>
+                      <span className="text-xl">{opt.icon}</span>
+                      <div>
+                        <p className={`text-sm font-bold ${form.residence_status === opt.value ? 'text-purple-800' : 'text-gray-700'}`}>{opt.label}</p>
+                        <p className="text-[10px] text-gray-400">{opt.sub}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
+
+              {/* Hall assignment — only shown for residents */}
+              {form.residence_status === 'resident' && (
+                <>
+                  {/* Hall details */}
+                  <div className="border border-purple-200 rounded-2xl overflow-hidden">
+                    <div className="bg-gradient-to-r from-purple-700 to-purple-800 px-4 py-3 flex items-center gap-2">
+                      <Home size={15} className="text-white" />
+                      <span className="text-sm font-bold text-white">Hall Assignment</span>
+                    </div>
+                    <div className="p-4 bg-purple-50/30 space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className={labelCls}>Hall / Hostel</label>
+                          <input className={inputCls}
+                            value={form.hall || ''}
+                            onChange={e => setField('hall', e.target.value)}
+                            placeholder="e.g. Nsibambi Hall" />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Block</label>
+                          <input className={inputCls}
+                            value={form.block || ''}
+                            onChange={e => setField('block', e.target.value)}
+                            placeholder="e.g. Block B" />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Room Number</label>
+                          <input className={inputCls}
+                            value={form.room_number || ''}
+                            onChange={e => setField('room_number', e.target.value)}
+                            placeholder="e.g. B054" />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Bed / Space</label>
+                          <select className={inputCls} value={form.bed || ''} onChange={e => setField('bed', e.target.value)}>
+                            <option value="">— Select Bed —</option>
+                            <option value="A">Bed A</option>
+                            <option value="B">Bed B</option>
+                            <option value="C">Bed C</option>
+                            <option value="D">Bed D</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className={labelCls}>Room Type</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: 'single',  label: 'Single',  sub: '1 occupant' },
+                            { value: 'double',  label: 'Double',  sub: '2 occupants' },
+                            { value: 'triple',  label: 'Triple',  sub: '3 occupants' },
+                          ].map(rt => (
+                            <button key={rt.value} type="button"
+                              onClick={() => setField('room_type', rt.value)}
+                              className={`p-2.5 rounded-xl border-2 text-center transition-all ${
+                                form.room_type === rt.value
+                                  ? 'border-purple-500 bg-purple-100 text-purple-800'
+                                  : 'border-gray-200 bg-white text-gray-600 hover:border-purple-200'
+                              }`}>
+                              <p className="text-sm font-bold">{rt.label}</p>
+                              <p className="text-[9px] text-gray-400">{rt.sub}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Meal plan toggle */}
+                      <label className="flex items-center justify-between p-3 bg-white border border-purple-100 rounded-xl cursor-pointer hover:bg-purple-50 transition-colors">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">🍽️</span>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">Meal Plan</p>
+                            <p className="text-[10px] text-gray-400">Student will be enrolled in the campus meal plan</p>
+                          </div>
+                        </div>
+                        <div className={`w-10 h-5 rounded-full transition-colors relative ${form.meal_plan ? 'bg-purple-500' : 'bg-gray-300'}`}>
+                          <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all shadow ${form.meal_plan ? 'right-0.5' : 'left-0.5'}`} />
+                          <input type="checkbox" className="sr-only"
+                            checked={!!form.meal_plan}
+                            onChange={e => setField('meal_plan', e.target.checked)} />
+                        </div>
+                      </label>
+
+                      {/* Assignment preview card */}
+                      {(form.hall || form.block || form.room_number) && (
+                        <div className="bg-gradient-to-br from-purple-700 to-purple-900 rounded-xl p-4 text-white">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-purple-300">Room Assignment Preview</p>
+                            <span className="text-[10px] font-bold bg-white/20 px-2 py-0.5 rounded-full text-purple-100 capitalize">
+                              {form.room_type || 'double'}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[10px] text-purple-300">Hall / Hostel</p>
+                              <p className="text-base font-bold capitalize">{form.hall || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-purple-300">Block</p>
+                              <p className="text-base font-bold">{form.block || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-purple-300">Room</p>
+                              <p className="text-2xl font-black tracking-tight">{form.room_number || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-purple-300">Bed</p>
+                              <p className="text-2xl font-black">{form.bed || '—'}</p>
+                            </div>
+                          </div>
+                          {form.meal_plan && (
+                            <div className="mt-3 pt-3 border-t border-purple-600 flex items-center gap-1.5">
+                              <span className="text-xs">🍽️</span>
+                              <span className="text-xs font-semibold text-purple-200">Meal plan included</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Finalise warning */}
               <div className="flex items-start gap-2 p-3 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-800">
-                <Home size={14} className="flex-shrink-0 mt-0.5 text-purple-600" />
-                <span>Clearing accommodation will mark the student as <strong>Fully Registered</strong>. Confirm residence status before proceeding.</span>
+                <ShieldCheck size={14} className="flex-shrink-0 mt-0.5 text-purple-600" />
+                <span>
+                  Clearing accommodation will mark this student as <strong>Fully Registered</strong>.
+                  {form.residence_status === 'non_resident'
+                    ? ' Day student — no hall assignment required.'
+                    : ' Ensure hall, block, and room details are correct before proceeding.'}
+                </span>
               </div>
+
+              {/* Notes */}
               <div>
-                <label className={labelCls}>Notes</label>
+                <label className={labelCls}>Accommodation Notes</label>
                 <textarea className={`${inputCls} resize-none`} rows={2}
                   value={form.anomaly_comment}
                   onChange={e => setField('anomaly_comment', e.target.value)}
-                  placeholder="Hall block, room, or any accommodation notes…" />
+                  placeholder="Special accommodation needs, room change requests, accessibility notes…" />
               </div>
             </div>
           )}
@@ -585,6 +740,12 @@ export default function RegistrationClearance() {
         residence_status: formData.residence_status,
         registration_type: formData.registration_type,
         anomaly_comment: formData.anomaly_comment || null,
+        hall:        formData.hall        || null,
+        block:       formData.block       || null,
+        room_number: formData.room_number || null,
+        bed:         formData.bed         || null,
+        room_type:   formData.room_type   || null,
+        meal_plan:   formData.meal_plan,
       });
       setActionModal(null);
       loadStats(); loadList();

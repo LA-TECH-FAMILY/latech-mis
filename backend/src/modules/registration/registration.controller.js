@@ -61,7 +61,10 @@ async function initiateRegistration(req, res) {
 
 async function clearStage(req, res) {
   const { id } = req.params;
-  const { stage, residence_status, registration_type, anomaly_comment } = req.body;
+  const {
+    stage, residence_status, registration_type, anomaly_comment,
+    hall, block, room_number, bed, room_type, meal_plan,
+  } = req.body;
 
   const allowed = ['accounts', 'academics', 'accommodation'];
   if (!allowed.includes(stage)) return res.status(400).json({ error: 'Invalid stage' });
@@ -69,12 +72,9 @@ async function clearStage(req, res) {
   const reg = (await db.query('SELECT * FROM student_registrations WHERE id = $1', [id])).rows[0];
   if (!reg) return res.status(404).json({ error: 'Registration not found' });
 
-  // Enforce order: accounts → academics → accommodation
-  const stageOrder = ['initiated', 'accounts_cleared', 'academics_cleared', 'accommodation_cleared', 'fully_registered'];
   const stageMap = { accounts: 'accounts_cleared', academics: 'academics_cleared', accommodation: 'accommodation_cleared' };
   const targetStatus = stageMap[stage];
 
-  // Accounts can be cleared with financial waiver even if clearance % is low
   if (stage === 'accounts') {
     const window = (await db.query(
       `SELECT min_clearance_percent FROM registration_windows
@@ -90,20 +90,29 @@ async function clearStage(req, res) {
     }
   }
 
-  // Determine next status after this clearance
   let nextStatus = targetStatus;
-  // If accommodation is cleared, it becomes fully_registered
   if (stage === 'accommodation') nextStatus = 'fully_registered';
 
   await db.query(
     `UPDATE student_registrations
      SET ${stage}_cleared_by = $1, ${stage}_cleared_at = NOW(), status = $2,
-         residence_status = COALESCE($4, residence_status),
-         registration_type = COALESCE($5, registration_type),
-         anomaly_comment = COALESCE($6, anomaly_comment)
+         residence_status  = COALESCE($4,  residence_status),
+         registration_type = COALESCE($5,  registration_type),
+         anomaly_comment   = COALESCE($6,  anomaly_comment),
+         hall              = COALESCE($7,  hall),
+         block             = COALESCE($8,  block),
+         room_number       = COALESCE($9,  room_number),
+         bed               = COALESCE($10, bed),
+         room_type         = COALESCE($11, room_type),
+         meal_plan         = COALESCE($12, meal_plan)
      WHERE id = $3`,
-    [req.user.id, nextStatus, id,
-     residence_status || null, registration_type || null, anomaly_comment || null]
+    [
+      req.user.id, nextStatus, id,
+      residence_status || null, registration_type || null, anomaly_comment || null,
+      hall || null, block || null, room_number || null,
+      bed || null, room_type || null,
+      meal_plan !== undefined ? meal_plan : null,
+    ]
   );
 
   // If fully registered, register courses too
@@ -176,6 +185,7 @@ async function listRegistrations(req, res) {
        sr.id, sr.student_id, sr.academic_year_id, sr.semester, sr.status, sr.clearance_percent, sr.financial_waiver,
        sr.waiver_reason, sr.accounts_cleared_at, sr.academics_cleared_at, sr.accommodation_cleared_at,
        sr.initiated_at, sr.registered_at, sr.residence_status, sr.registration_type, sr.anomaly_comment,
+       sr.hall, sr.block, sr.room_number, sr.bed, sr.room_type, sr.meal_plan,
        s.student_no, s.programme_id, s.year_of_study, s.nationality, s.student_type,
        u.first_name, u.last_name, u.email,
        p.name AS programme_name, p.code AS programme_code,
