@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   ClipboardCheck, Search, AlertCircle, CheckCircle2, User,
   DollarSign, GraduationCap, Home, ShieldCheck, ChevronRight,
-  X, TrendingUp, FileText, BadgeCheck,
+  X, TrendingUp, FileText, BadgeCheck, BookOpen, Layers, Hash,
 } from 'lucide-react';
 import api from '../../services/api';
 import PageHeader from '../../components/PageHeader';
@@ -89,6 +89,13 @@ const STAGE_CONFIG = {
   },
 };
 
+const UNIT_TYPE_CONFIG = {
+  core:        { label: 'Core',        color: 'bg-blue-100 text-blue-700' },
+  elective:    { label: 'Elective',    color: 'bg-amber-100 text-amber-700' },
+  foundation:  { label: 'Foundation',  color: 'bg-emerald-100 text-emerald-700' },
+  recess:      { label: 'Recess',      color: 'bg-purple-100 text-purple-700' },
+};
+
 // ── Clearance Modal ──────────────────────────────────────────────────────────
 function ClearanceModal({ action, onClose, onSave, saving }) {
   const { reg, type } = action;
@@ -107,6 +114,18 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
   });
   function setField(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
+  const [passbook, setPassbook] = useState(null);
+  const [passbookLoading, setPassbookLoading] = useState(false);
+
+  useEffect(() => {
+    if (type !== 'academics') return;
+    setPassbookLoading(true);
+    api.get(`/registration/${reg.id}/passbook`)
+      .then(r => setPassbook(r.data))
+      .catch(() => setPassbook(null))
+      .finally(() => setPassbookLoading(false));
+  }, [reg.id, type]);
+
   function handleSubmit(e) {
     e.preventDefault();
     if (needsWaiver && !form.grant_waiver) {
@@ -122,7 +141,7 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${type === 'academics' ? 'max-w-3xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto`}>
         {/* Modal Header */}
         <div className={`bg-gradient-to-r ${cfg.gradient} p-5 rounded-t-2xl`}>
           <div className="flex items-start justify-between">
@@ -268,7 +287,8 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
           )}
 
           {type === 'academics' && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              {/* Registration Type */}
               <div>
                 <label className={labelCls}>Registration Type</label>
                 <select className={inputCls} value={form.registration_type} onChange={e => setField('registration_type', e.target.value)}>
@@ -278,16 +298,148 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
                   <option value="transfer">Transfer Student</option>
                 </select>
               </div>
-              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-800">
-                <FileText size={14} className="flex-shrink-0 mt-0.5 text-blue-600" />
-                <span>Confirm that the student's courses are enrolled and the academic office has verified their programme requirements for this semester.</span>
+
+              {/* Passbook Preview */}
+              <div className="border border-blue-200 rounded-2xl overflow-hidden">
+                {/* Passbook header */}
+                <div className="bg-gradient-to-r from-blue-700 to-blue-800 px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <BookOpen size={16} className="text-white" />
+                    <span className="text-sm font-bold text-white">Student Passbook Preview</span>
+                  </div>
+                  {passbook?.curriculum && (
+                    <span className="text-[10px] font-semibold text-blue-200 bg-white/10 px-2 py-0.5 rounded-full">
+                      {passbook.curriculum.code}
+                    </span>
+                  )}
+                </div>
+
+                {passbookLoading ? (
+                  <div className="p-6 flex justify-center items-center gap-2 text-sm text-gray-400">
+                    <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                    Loading passbook…
+                  </div>
+                ) : !passbook ? (
+                  <div className="p-5 flex items-start gap-2 text-sm text-gray-500">
+                    <AlertCircle size={15} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                    Could not load passbook. Verify manually before clearing.
+                  </div>
+                ) : (
+                  <div className="p-4 space-y-4 bg-blue-50/30">
+                    {/* Certification statement */}
+                    <div className="bg-white border border-blue-100 rounded-xl p-4">
+                      <div className="flex items-start gap-2 mb-2">
+                        <BadgeCheck size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                        <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">Registration Certificate</p>
+                      </div>
+                      <p className="text-sm text-gray-700 leading-relaxed">
+                        This certifies that <strong>{reg.first_name} {reg.last_name}</strong> is registered for{' '}
+                        <strong>Year {reg.year_of_study}, Semester {reg.semester}</strong> —{' '}
+                        <strong>{reg.academic_year_label}</strong>.
+                      </p>
+                      <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-blue-50">
+                        {[
+                          { label: 'Reg No', value: reg.student_no },
+                          { label: 'Programme', value: reg.programme_code },
+                          { label: 'Curriculum', value: passbook.curriculum?.name || '—' },
+                          { label: 'Status', value: reg.status?.replace(/_/g,' ') },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="text-xs">
+                            <span className="text-gray-400">{label}: </span>
+                            <span className="font-semibold text-gray-700 capitalize">{value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Curriculum units table */}
+                    {passbook.curriculumUnits?.length > 0 ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-1.5">
+                            <Layers size={13} className="text-blue-600" />
+                            <p className="text-xs font-bold text-blue-800 uppercase tracking-wide">Enrolled Course Units</p>
+                          </div>
+                          <div className="flex gap-3 text-[10px] text-gray-500">
+                            <span><span className="font-bold text-gray-800">{passbook.curriculumUnits.length}</span> units</span>
+                            <span><span className="font-bold text-gray-800">
+                              {passbook.curriculumUnits.reduce((s, u) => s + parseFloat(u.credit_units || 0), 0)}
+                            </span> CU</span>
+                          </div>
+                        </div>
+                        <div className="rounded-xl overflow-hidden border border-blue-100">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-blue-800 text-white">
+                                <th className="text-left px-3 py-2 font-semibold w-20">Code</th>
+                                <th className="text-left px-3 py-2 font-semibold">Unit Name</th>
+                                <th className="text-center px-3 py-2 font-semibold w-20">Type</th>
+                                <th className="text-center px-3 py-2 font-semibold w-10">CU</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {passbook.curriculumUnits.map((u, i) => {
+                                const tc = UNIT_TYPE_CONFIG[u.unit_type] || { label: u.unit_type, color: 'bg-gray-100 text-gray-600' };
+                                return (
+                                  <tr key={u.id} className={`border-t border-blue-50 ${i % 2 === 0 ? 'bg-white' : 'bg-blue-50/40'}`}>
+                                    <td className="px-3 py-2 font-mono font-semibold text-gray-700">{u.code}</td>
+                                    <td className="px-3 py-2 text-gray-700">{u.name}</td>
+                                    <td className="px-3 py-2 text-center">
+                                      <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold ${tc.color}`}>{tc.label}</span>
+                                    </td>
+                                    <td className="px-3 py-2 text-center font-bold text-gray-700">{u.credit_units}</td>
+                                  </tr>
+                                );
+                              })}
+                              <tr className="bg-blue-800 text-white border-t border-blue-700">
+                                <td colSpan={3} className="px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wide">Total Credit Units</td>
+                                <td className="px-3 py-2 text-center font-bold">
+                                  {passbook.curriculumUnits.reduce((s, u) => s + parseFloat(u.credit_units || 0), 0)}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                        <AlertCircle size={14} className="flex-shrink-0 mt-0.5 text-amber-500" />
+                        <span>No curriculum units found for Year {reg.year_of_study}, Semester {reg.semester}.{' '}
+                          {!passbook.curriculum && 'No active curriculum is configured for this programme. '}
+                          Verify manually before clearing.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Previously registered courses, if any */}
+                    {passbook.registeredCourses?.length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Hash size={13} className="text-emerald-600" />
+                          <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">
+                            Previously Registered Courses ({passbook.registeredCourses.length})
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {passbook.registeredCourses.map(c => (
+                            <span key={c.course_id} className="text-[10px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-mono">
+                              {c.code}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {/* Special comments */}
               <div>
-                <label className={labelCls}>Notes</label>
+                <label className={labelCls}>Special Comments</label>
                 <textarea className={`${inputCls} resize-none`} rows={2}
                   value={form.anomaly_comment}
                   onChange={e => setField('anomaly_comment', e.target.value)}
-                  placeholder="Any academic notes or exceptions…" />
+                  placeholder="Academic exceptions, supplementary registrations, deferred units…" />
               </div>
             </div>
           )}

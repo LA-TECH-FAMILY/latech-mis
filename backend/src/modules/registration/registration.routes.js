@@ -24,6 +24,9 @@ router.put('/:id/courses', requireRole('admin', 'registrar'), wrap(c.registerCou
 // Student view
 router.get('/students/:student_id/years/:academic_year_id/semesters/:semester', wrap(c.getStudentRegistration));
 
+// Passbook (academics clearance data)
+router.get('/:id/passbook', wrap(c.getPassbook));
+
 // Legacy
 router.post('/register', requireRole('admin', 'registrar', 'student'), wrap(c.registerStudent));
 

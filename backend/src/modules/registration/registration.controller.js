@@ -173,10 +173,10 @@ async function listRegistrations(req, res) {
 
   const { rows } = await db.query(
     `SELECT
-       sr.id, sr.student_id, sr.semester, sr.status, sr.clearance_percent, sr.financial_waiver,
+       sr.id, sr.student_id, sr.academic_year_id, sr.semester, sr.status, sr.clearance_percent, sr.financial_waiver,
        sr.waiver_reason, sr.accounts_cleared_at, sr.academics_cleared_at, sr.accommodation_cleared_at,
        sr.initiated_at, sr.registered_at, sr.residence_status, sr.registration_type, sr.anomaly_comment,
-       s.student_no, s.year_of_study, s.nationality, s.student_type,
+       s.student_no, s.programme_id, s.year_of_study, s.nationality, s.student_type,
        u.first_name, u.last_name, u.email,
        p.name AS programme_name, p.code AS programme_code,
        ay.label AS academic_year_label,
@@ -248,6 +248,65 @@ async function getStudentRegistration(req, res) {
   res.json(rows[0]);
 }
 
+async function getPassbook(req, res) {
+  const { id } = req.params; // registration id
+
+  const reg = (await db.query(
+    `SELECT sr.*, s.programme_id, s.year_of_study, s.student_no, s.nationality, s.student_type,
+            u.first_name, u.last_name, u.email,
+            p.name AS programme_name, p.code AS programme_code, p.duration_years,
+            ay.label AS academic_year_label,
+            COALESCE(inv.total_amount, 0) AS total_fees,
+            COALESCE(inv.amount_paid, 0) AS fees_paid,
+            COALESCE(inv.clearance_percent, 0) AS clearance_pct
+     FROM student_registrations sr
+     JOIN students s ON s.id = sr.student_id
+     JOIN users u ON u.id = s.user_id
+     JOIN programmes p ON p.id = s.programme_id
+     JOIN academic_years ay ON ay.id = sr.academic_year_id
+     LEFT JOIN invoices inv ON inv.student_id = sr.student_id
+       AND inv.academic_year_id = sr.academic_year_id AND inv.semester = sr.semester
+     WHERE sr.id = $1`, [id]
+  )).rows[0];
+
+  if (!reg) return res.status(404).json({ error: 'Registration not found' });
+
+  // Find active curriculum for this programme
+  const curriculum = (await db.query(
+    `SELECT id, name, code FROM curricula
+     WHERE programme_id = $1 AND status = 'active' AND is_active = TRUE
+     ORDER BY created_at DESC LIMIT 1`,
+    [reg.programme_id]
+  )).rows[0];
+
+  let curriculumUnits = [];
+  if (curriculum) {
+    const { rows } = await db.query(
+      `SELECT id, code, name, abbreviation, unit_type, credit_units, year_of_study, semester
+       FROM curriculum_units
+       WHERE curriculum_id = $1 AND year_of_study = $2 AND semester = $3 AND is_active = TRUE
+       ORDER BY unit_type, sort_order, code`,
+      [curriculum.id, reg.year_of_study, reg.semester]
+    );
+    curriculumUnits = rows;
+  }
+
+  // Get any registered courses
+  const registeredCourses = (await db.query(
+    `SELECT rc.course_id, c.code, c.name, c.credit_units, c.level AS unit_type
+     FROM registered_courses rc JOIN courses c ON c.id = rc.course_id
+     WHERE rc.registration_id = $1`,
+    [id]
+  )).rows;
+
+  res.json({
+    registration: reg,
+    curriculum: curriculum || null,
+    curriculumUnits,
+    registeredCourses,
+  });
+}
+
 // Legacy endpoint kept for backward compat
 async function registerStudent(req, res) {
   return initiateRegistration(req, res);
@@ -257,5 +316,5 @@ module.exports = {
   listWindows, createWindow,
   initiateRegistration, clearStage, grantWaiver, registerCourses,
   listRegistrations, getSemesterStats, getStudentRegistration,
-  registerStudent,
+  getPassbook, registerStudent,
 };
