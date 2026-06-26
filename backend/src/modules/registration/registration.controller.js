@@ -184,7 +184,7 @@ async function listRegistrations(req, res) {
        COALESCE(inv.amount_paid, 0) AS fees_paid,
        COALESCE(inv.total_amount, 0) - COALESCE(inv.amount_paid, 0) AS outstanding_balance,
        COALESCE(inv.clearance_percent, 0) AS live_clearance_pct,
-       inv.status AS invoice_status, inv.invoice_number
+       inv.status AS invoice_status, inv.invoice_no AS invoice_number
      FROM student_registrations sr
      JOIN students s ON s.id = sr.student_id
      JOIN users u ON u.id = s.user_id
