@@ -148,11 +148,11 @@ async function approveFeeStructure(req, res) {
 
   await db.query(
     `UPDATE fee_structures SET
-       status = $1,
-       approved_by = CASE WHEN $1 = 'approved' THEN $2 ELSE approved_by END,
-       approved_at = CASE WHEN $1 = 'approved' THEN NOW() ELSE approved_at END,
+       status = $1::varchar,
+       approved_by = CASE WHEN $1::varchar = 'approved' THEN $2::uuid ELSE approved_by END,
+       approved_at = CASE WHEN $1::varchar = 'approved' THEN NOW() ELSE approved_at END,
        updated_at  = NOW()
-     WHERE id = $3`,
+     WHERE id = $3::uuid`,
     [newStatus, req.user.id, id]
   );
   res.json({ message: `Fee structure ${action}d` });
