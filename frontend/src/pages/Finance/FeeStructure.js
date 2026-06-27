@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   DollarSign, Plus, Trash2, CheckCircle2, Clock, TrendingDown,
-  Eye, Edit2, Copy, ChevronDown, ChevronRight, X, BadgeCheck,
-  AlertCircle, BookOpen, Users, Calendar, Filter, Layers,
+  Eye, Edit2, ChevronDown, ChevronRight, X, BadgeCheck,
+  AlertCircle, Calendar, Layers, GraduationCap, Globe,
 } from 'lucide-react';
 import api from '../../services/api';
 import PageHeader from '../../components/PageHeader';
@@ -377,8 +377,360 @@ function DetailDrawer({ row, onClose, onApprove, onDecline, onEdit, onDelete }) 
   );
 }
 
+const TUITION_STATUS_CFG = {
+  current:  { label: 'Current',  color: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+  outgoing: { label: 'Outgoing', color: 'bg-amber-100 text-amber-700',    dot: 'bg-amber-500' },
+  deactive: { label: 'Deactive', color: 'bg-red-100 text-red-600',        dot: 'bg-red-400' },
+};
+
+const STUDY_TIME_LABELS = { day: 'Day', evening: 'Evening', modular: 'Modular', weekend: 'Weekend', distance: 'Distance Learning' };
+
+function TuitionStatusBadge({ status }) {
+  const cfg = TUITION_STATUS_CFG[status] || TUITION_STATUS_CFG.current;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${cfg.color}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── Tuition Modal ──────────────────────────────────────────────────────────────
+function TuitionModal({ initial, programmes, academicYearId, onClose, onSaved }) {
+  const isEdit = !!initial?.id;
+  const [form, setForm] = useState({
+    programme_id:         initial?.programme_id         || '',
+    national_amount:      initial?.national_amount      || '',
+    international_amount: initial?.international_amount || '',
+    study_time:           initial?.study_time           || 'day',
+    status:               initial?.status               || 'current',
+    notes:                initial?.notes                || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const selectedProg = programmes.find(p => p.id === form.programme_id);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, academic_year_id: academicYearId };
+      if (isEdit) await api.put(`/finance/tuition-fees/${initial.id}`, payload);
+      else await api.post('/finance/tuition-fees', payload);
+      onSaved();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to save');
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-gradient-to-r from-blue-800 to-blue-700 p-5 rounded-t-2xl flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="bg-white/15 rounded-xl p-2">
+              <GraduationCap size={18} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-white">{isEdit ? 'Edit Tuition Fee' : 'Set Tuition Fee'}</h2>
+              <p className="text-xs text-white/60 mt-0.5">Programme tuition — national & international rates</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white p-1 rounded-lg hover:bg-white/10">
+            <X size={17} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          {/* Programme */}
+          <div>
+            <label className={labelCls}>Programme *</label>
+            <select className={inputCls} value={form.programme_id} onChange={e => set('programme_id', e.target.value)} required disabled={isEdit}>
+              <option value="">— Select Programme —</option>
+              {programmes.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
+            </select>
+            {selectedProg && (
+              <p className="text-[10px] text-gray-400 mt-1 capitalize">
+                {selectedProg.level} · {selectedProg.duration_years} yr(s) · {selectedProg.study_mode || 'Day'}
+              </p>
+            )}
+          </div>
+
+          {/* Study Time */}
+          <div>
+            <label className={labelCls}>Study Time</label>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(STUDY_TIME_LABELS).map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => set('study_time', v)}
+                  className={`py-2 rounded-xl text-xs font-semibold border-2 transition-all ${
+                    form.study_time === v ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-blue-200'
+                  }`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Amounts */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>National Fees (UGX) *</label>
+              <input type="number" min="0" step="1000" className={inputCls}
+                value={form.national_amount} onChange={e => set('national_amount', e.target.value)} required
+                placeholder="e.g. 1500000" />
+            </div>
+            <div>
+              <label className={labelCls}>International Fees (UGX) *</label>
+              <div className="relative">
+                <Globe size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                <input type="number" min="0" step="1000" className={`${inputCls} pl-8`}
+                  value={form.international_amount} onChange={e => set('international_amount', e.target.value)} required
+                  placeholder="e.g. 2500000" />
+              </div>
+            </div>
+          </div>
+
+          {/* Preview */}
+          {(form.national_amount || form.international_amount) && (
+            <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 rounded-xl p-4">
+              <p className="text-[10px] font-bold text-blue-300/70 uppercase tracking-widest mb-3">Fee Preview</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] text-blue-300/60">National (UGX)</p>
+                  <p className="text-xl font-black text-white">{fmt(form.national_amount)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-blue-300/60">International (UGX)</p>
+                  <p className="text-xl font-black text-white">{fmt(form.international_amount)}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Status + Notes */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Status</label>
+              <select className={inputCls} value={form.status} onChange={e => set('status', e.target.value)}>
+                <option value="current">Current</option>
+                <option value="outgoing">Outgoing</option>
+                <option value="deactive">Deactive</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>Notes</label>
+              <input className={inputCls} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional" />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1 border-t border-gray-100">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">Cancel</button>
+            <button type="submit" disabled={saving}
+              className="px-5 py-2 text-sm font-semibold bg-blue-700 hover:bg-blue-600 text-white rounded-xl disabled:opacity-60">
+              {saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Set Tuition'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Tuition Fees Tab ───────────────────────────────────────────────────────────
+function TuitionFeesTab({ academicYearId, programmes }) {
+  const [tuitions, setTuitions] = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [addModal, setAddModal] = useState(false);
+  const [editRow, setEditRow]   = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+
+  const load = useCallback(async () => {
+    if (!academicYearId) return;
+    setLoading(true);
+    const params = new URLSearchParams({ academic_year_id: academicYearId });
+    if (statusFilter) params.set('status', statusFilter);
+    const r = await api.get(`/finance/tuition-fees?${params}`);
+    setTuitions(r.data);
+    setLoading(false);
+  }, [academicYearId, statusFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function doDelete(row) {
+    if (!window.confirm(`Remove tuition for "${row.programme_name}"?`)) return;
+    await api.delete(`/finance/tuition-fees/${row.id}`);
+    load();
+  }
+
+  function toggleCollapse(key) { setCollapsed(c => ({ ...c, [key]: !c[key] })); }
+
+  // Group by faculty → department
+  const grouped = tuitions.reduce((acc, t) => {
+    const facKey = t.faculty_name || 'Unassigned Faculty';
+    const deptKey = t.department_name || 'Unassigned Department';
+    if (!acc[facKey]) acc[facKey] = {};
+    if (!acc[facKey][deptKey]) acc[facKey][deptKey] = [];
+    acc[facKey][deptKey].push(t);
+    return acc;
+  }, {});
+
+  const totalConfigured = tuitions.length;
+  const totalProgrammes = programmes.length;
+  const currentCount = tuitions.filter(t => t.status === 'current').length;
+
+  return (
+    <div className="space-y-4">
+      {/* Mini stats */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Configured',    val: totalConfigured, sub: `of ${totalProgrammes} programmes`, color: 'from-blue-700 to-blue-800' },
+          { label: 'Current',       val: currentCount,    sub: 'active tuition rates',             color: 'from-emerald-600 to-emerald-700' },
+          { label: 'Not Set',       val: Math.max(0, totalProgrammes - totalConfigured), sub: 'programmes missing tuition', color: 'from-amber-600 to-amber-700' },
+        ].map(s => (
+          <div key={s.label} className={`bg-gradient-to-br ${s.color} rounded-2xl p-4 text-white`}>
+            <p className="text-2xl font-black">{s.val}</p>
+            <p className="text-xs font-bold opacity-80 mt-0.5">{s.label}</p>
+            <p className="text-[10px] opacity-50 mt-0.5">{s.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-3">
+        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+          value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Statuses</option>
+          <option value="current">Current</option>
+          <option value="outgoing">Outgoing</option>
+          <option value="deactive">Deactive</option>
+        </select>
+        <button onClick={() => setAddModal(true)} disabled={!academicYearId}
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-sm font-semibold rounded-xl disabled:opacity-50 transition-colors">
+          <Plus size={14} /> Set Tuition Fee
+        </button>
+      </div>
+
+      {loading ? <div className="py-16 flex justify-center"><Spinner /></div> : (
+        <div className="space-y-4">
+          {Object.keys(grouped).length === 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-14 text-center">
+              <GraduationCap size={32} className="text-gray-300 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-gray-500">No tuition fees configured yet</p>
+              <p className="text-xs text-gray-400 mt-1">Click "Set Tuition Fee" to add per-programme tuition rates.</p>
+            </div>
+          )}
+
+          {Object.entries(grouped).map(([facKey, depts]) => {
+            const facTotal = Object.values(depts).flat().length;
+            return (
+              <div key={facKey} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                {/* Faculty header */}
+                <button onClick={() => toggleCollapse(facKey)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-blue-900 to-blue-800 hover:from-blue-800 hover:to-blue-700 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <GraduationCap size={14} className="text-blue-300" />
+                    <span className="text-sm font-bold text-white">{facKey}</span>
+                    <span className="text-[10px] font-semibold text-blue-300/60 bg-white/10 px-2 py-0.5 rounded-full">{facTotal} programmes</span>
+                  </div>
+                  {collapsed[facKey] ? <ChevronRight size={15} className="text-white/50" /> : <ChevronDown size={15} className="text-white/50" />}
+                </button>
+
+                {!collapsed[facKey] && Object.entries(depts).map(([deptKey, rows]) => (
+                  <div key={deptKey}>
+                    {/* Department sub-header */}
+                    <button onClick={() => toggleCollapse(`${facKey}__${deptKey}`)}
+                      className="w-full flex items-center justify-between px-5 py-2.5 bg-blue-50/60 border-b border-blue-100 hover:bg-blue-100/40 transition-colors">
+                      <div className="flex items-center gap-2">
+                        {collapsed[`${facKey}__${deptKey}`]
+                          ? <ChevronRight size={13} className="text-blue-400" />
+                          : <ChevronDown size={13} className="text-blue-400" />}
+                        <span className="text-xs font-semibold text-blue-700">{deptKey}</span>
+                        <span className="text-[10px] text-blue-500">{rows.length} {rows.length === 1 ? 'programme' : 'programmes'}</span>
+                      </div>
+                    </button>
+
+                    {!collapsed[`${facKey}__${deptKey}`] && (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-gray-50/80 border-b border-gray-100">
+                            <th className="text-left px-5 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Programme</th>
+                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Level / Mode</th>
+                            <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">National (UGX)</th>
+                            <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">International (UGX)</th>
+                            <th className="text-center px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                            <th className="px-4 py-2 w-20" />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((row, i) => (
+                            <tr key={row.id}
+                              className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
+                              <td className="px-5 py-3">
+                                <p className="font-semibold text-gray-800">{row.programme_name}</p>
+                                <p className="text-[10px] text-gray-400 font-mono">{row.programme_code} · {STUDY_TIME_LABELS[row.study_time] || row.study_time}</p>
+                              </td>
+                              <td className="px-3 py-3 hidden md:table-cell">
+                                <span className="text-xs text-gray-500 capitalize">{row.programme_level}</span>
+                                {row.duration_years && <span className="text-[10px] text-gray-400 block">{row.duration_years} yr(s)</span>}
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <span className="font-mono font-bold text-gray-800">{fmt(row.national_amount)}</span>
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Globe size={11} className="text-blue-400" />
+                                  <span className="font-mono font-bold text-blue-700">{fmt(row.international_amount)}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <TuitionStatusBadge status={row.status} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <button onClick={() => setEditRow(row)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button onClick={() => doDelete(row)}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete">
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {addModal && (
+        <TuitionModal programmes={programmes} academicYearId={academicYearId}
+          onClose={() => setAddModal(false)}
+          onSaved={() => { setAddModal(false); load(); }} />
+      )}
+      {editRow && (
+        <TuitionModal initial={editRow} programmes={programmes} academicYearId={academicYearId}
+          onClose={() => setEditRow(null)}
+          onSaved={() => { setEditRow(null); load(); }} />
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function FeeStructure() {
+  const [tab, setTab]             = useState('other'); // 'other' | 'tuition'
   const [years, setYears]         = useState([]);
   const [programmes, setProgrammes] = useState([]);
   const [feeItems, setFeeItems]   = useState([]);
@@ -471,43 +823,71 @@ export default function FeeStructure() {
         title="Fee Structure"
         subtitle={yearLabel ? `${yearLabel} · Fees & Charges` : 'Fees & Charges'}
         actions={
-          <div className="flex gap-2">
-            <button onClick={() => setItemModal(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition-colors">
-              <Plus size={12} /> Fee Item
-            </button>
-            <button onClick={() => setAddModal(true)} disabled={!filter.academic_year_id}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
-              <Plus size={12} /> Add Fee Line
-            </button>
-          </div>
+          tab === 'other' ? (
+            <div className="flex gap-2">
+              <button onClick={() => setItemModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition-colors">
+                <Plus size={12} /> Fee Item
+              </button>
+              <button onClick={() => setAddModal(true)} disabled={!filter.academic_year_id}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-400 text-white text-xs font-semibold rounded-lg disabled:opacity-50 transition-colors">
+                <Plus size={12} /> Add Fee Line
+              </button>
+            </div>
+          ) : null
         }
       />
 
-      {/* Filters */}
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {[
+          { key: 'other',   label: 'Other Fees',    icon: Layers },
+          { key: 'tuition', label: 'Tuition Fees',  icon: GraduationCap },
+        ].map(({ key, label, icon: Icon }) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+              tab === key
+                ? 'bg-white text-slate-800 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}>
+            <Icon size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Academic year filter (shared) */}
       <div className="flex flex-wrap gap-3">
         <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
           value={filter.academic_year_id} onChange={e => setFilter(f => ({ ...f, academic_year_id: e.target.value }))}>
           <option value="">Select Academic Year</option>
           {years.map(y => <option key={y.id} value={y.id}>{y.label}{y.is_current ? ' ✓' : ''}</option>)}
         </select>
-        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-          value={filter.semester} onChange={e => setFilter(f => ({ ...f, semester: e.target.value }))}>
-          <option value="">All Semesters</option>
-          <option value="1">Semester 1</option>
-          <option value="2">Semester 2</option>
-          <option value="3">Semester 3</option>
-        </select>
-        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
-          value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}>
-          <option value="">All Statuses</option>
-          <option value="draft">Draft</option>
-          <option value="approved">Approved</option>
-          <option value="outgoing">Outgoing</option>
-        </select>
+        {tab === 'other' && <>
+          <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+            value={filter.semester} onChange={e => setFilter(f => ({ ...f, semester: e.target.value }))}>
+            <option value="">All Semesters</option>
+            <option value="1">Semester 1</option>
+            <option value="2">Semester 2</option>
+            <option value="3">Semester 3</option>
+          </select>
+          <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-300"
+            value={filter.status} onChange={e => setFilter(f => ({ ...f, status: e.target.value }))}>
+            <option value="">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="approved">Approved</option>
+            <option value="outgoing">Outgoing</option>
+          </select>
+        </>}
       </div>
 
-      {/* Stats bar */}
+      {/* Tuition tab */}
+      {tab === 'tuition' && (
+        <TuitionFeesTab academicYearId={filter.academic_year_id} programmes={programmes} />
+      )}
+
+      {/* Stats bar (other fees only) */}
+      {tab === 'other' && <>
       {stats && (
         <div className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 rounded-2xl shadow-xl p-5">
           <div className="flex items-center justify-between mb-4">
@@ -722,6 +1102,7 @@ export default function FeeStructure() {
           onDelete={doDelete}
         />
       )}
+      </>}
     </div>
   );
 }

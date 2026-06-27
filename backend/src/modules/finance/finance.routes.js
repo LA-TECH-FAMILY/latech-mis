@@ -29,6 +29,12 @@ router.post('/invoices', finance, wrap(c.createInvoice));
 router.get('/payments', finance, wrap(c.listPayments));
 router.post('/payments', finance, wrap(c.recordPayment));
 
+// Tuition fees
+router.get('/tuition-fees', finance, wrap(c.listTuitionFees));
+router.post('/tuition-fees', requireRole('admin', 'finance_officer'), wrap(c.upsertTuitionFee));
+router.put('/tuition-fees/:id', requireRole('admin', 'finance_officer'), wrap(c.updateTuitionFee));
+router.delete('/tuition-fees/:id', requireRole('admin', 'finance_officer'), wrap(c.deleteTuitionFee));
+
 // Student financials summary
 router.get('/students/:student_id', finance, wrap(c.getStudentFinancials));
 

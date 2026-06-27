@@ -395,9 +395,89 @@ async function getStudentFinancials(req, res) {
   res.json({ student, invoices });
 }
 
+// ─── Tuition Fees ─────────────────────────────────────────────────────────────
+
+async function listTuitionFees(req, res) {
+  const { academic_year_id, status } = req.query;
+  const params = [];
+  const where = ['1=1'];
+  if (academic_year_id) { params.push(academic_year_id); where.push(`tf.academic_year_id = $${params.length}`); }
+  if (status) { params.push(status); where.push(`tf.status = $${params.length}`); }
+
+  const { rows } = await db.query(
+    `SELECT tf.*,
+            p.name AS programme_name, p.code AS programme_code, p.level AS programme_level,
+            p.study_mode, p.duration_years,
+            d.name AS department_name,
+            f.name AS faculty_name,
+            ay.label AS academic_year_label,
+            u.first_name || ' ' || u.last_name AS created_by_name
+     FROM tuition_fees tf
+     JOIN programmes p ON p.id = tf.programme_id
+     LEFT JOIN departments d ON d.id = p.department_id
+     LEFT JOIN faculties f ON f.id = d.faculty_id
+     JOIN academic_years ay ON ay.id = tf.academic_year_id
+     LEFT JOIN users u ON u.id = tf.created_by
+     WHERE ${where.join(' AND ')}
+     ORDER BY f.name NULLS LAST, d.name NULLS LAST, p.name`,
+    params
+  );
+  res.json(rows);
+}
+
+async function upsertTuitionFee(req, res) {
+  const { academic_year_id, programme_id, national_amount, international_amount, study_time, status, notes } = req.body;
+  if (!academic_year_id || !programme_id) {
+    return res.status(400).json({ error: 'academic_year_id and programme_id are required' });
+  }
+
+  const { rows } = await db.query(
+    `INSERT INTO tuition_fees
+       (academic_year_id, programme_id, national_amount, international_amount, study_time, status, notes, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (academic_year_id, programme_id, study_time) DO UPDATE SET
+       national_amount      = EXCLUDED.national_amount,
+       international_amount = EXCLUDED.international_amount,
+       status               = EXCLUDED.status,
+       notes                = EXCLUDED.notes,
+       updated_at           = NOW()
+     RETURNING *`,
+    [
+      academic_year_id, programme_id,
+      national_amount || 0, international_amount || 0,
+      study_time || 'day', status || 'current',
+      notes || null, req.user.id,
+    ]
+  );
+  res.status(201).json(rows[0]);
+}
+
+async function updateTuitionFee(req, res) {
+  const { id } = req.params;
+  const { national_amount, international_amount, study_time, status, notes } = req.body;
+  await db.query(
+    `UPDATE tuition_fees SET
+       national_amount      = COALESCE($1, national_amount),
+       international_amount = COALESCE($2, international_amount),
+       study_time           = COALESCE($3, study_time),
+       status               = COALESCE($4, status),
+       notes                = COALESCE($5, notes),
+       updated_at           = NOW()
+     WHERE id = $6`,
+    [national_amount, international_amount, study_time, status, notes, id]
+  );
+  res.json({ message: 'Updated' });
+}
+
+async function deleteTuitionFee(req, res) {
+  await db.query('DELETE FROM tuition_fees WHERE id = $1', [req.params.id]);
+  res.json({ message: 'Deleted' });
+}
+
 module.exports = {
   listFeeItems, createFeeItem, updateFeeItem,
   listFeeStructures, getFeeStructureStats, createFeeStructure, updateFeeStructure, approveFeeStructure, deleteFeeStructure,
+  listTuitionFees, upsertTuitionFee, updateTuitionFee, deleteTuitionFee,
   listInvoices, getInvoice, createInvoice,
   recordPayment, listPayments, getStudentFinancials,
 };
