@@ -146,7 +146,7 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/55 backdrop-blur-md z-50 flex items-center justify-center p-4">
       <div className={`bg-white rounded-2xl shadow-2xl w-full ${type !== 'accounts' ? 'max-w-3xl' : 'max-w-2xl'} max-h-[92vh] overflow-y-auto`}>
         {/* Modal Header */}
         <div className={`bg-gradient-to-r ${cfg.gradient} p-5 rounded-t-2xl`}>
