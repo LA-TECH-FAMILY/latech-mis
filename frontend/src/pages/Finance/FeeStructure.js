@@ -625,7 +625,11 @@ function TuitionFeesTab({ academicYearId, programmes }) {
           )}
 
           {Object.entries(grouped).map(([facKey, depts]) => {
-            const facTotal = Object.values(depts).flat().length;
+            // Count unique programmes across all depts
+            const facProgCount = Object.values(depts).reduce((s, rows) => {
+              const uniq = new Set(rows.map(r => r.programme_id));
+              return s + uniq.size;
+            }, 0);
             return (
               <div key={facKey} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {/* Faculty header */}
@@ -634,80 +638,122 @@ function TuitionFeesTab({ academicYearId, programmes }) {
                   <div className="flex items-center gap-2">
                     <GraduationCap size={14} className="text-blue-300" />
                     <span className="text-sm font-bold text-white">{facKey}</span>
-                    <span className="text-[10px] font-semibold text-blue-300/60 bg-white/10 px-2 py-0.5 rounded-full">{facTotal} programmes</span>
+                    <span className="text-[10px] font-semibold text-blue-300/60 bg-white/10 px-2 py-0.5 rounded-full">{facProgCount} programmes</span>
                   </div>
                   {collapsed[facKey] ? <ChevronRight size={15} className="text-white/50" /> : <ChevronDown size={15} className="text-white/50" />}
                 </button>
 
-                {!collapsed[facKey] && Object.entries(depts).map(([deptKey, rows]) => (
-                  <div key={deptKey}>
-                    {/* Department sub-header */}
-                    <button onClick={() => toggleCollapse(`${facKey}__${deptKey}`)}
-                      className="w-full flex items-center justify-between px-5 py-2.5 bg-blue-50/60 border-b border-blue-100 hover:bg-blue-100/40 transition-colors">
-                      <div className="flex items-center gap-2">
-                        {collapsed[`${facKey}__${deptKey}`]
-                          ? <ChevronRight size={13} className="text-blue-400" />
-                          : <ChevronDown size={13} className="text-blue-400" />}
-                        <span className="text-xs font-semibold text-blue-700">{deptKey}</span>
-                        <span className="text-[10px] text-blue-500">{rows.length} {rows.length === 1 ? 'programme' : 'programmes'}</span>
-                      </div>
-                    </button>
+                {!collapsed[facKey] && Object.entries(depts).map(([deptKey, rows]) => {
+                  // Group by programme — one table row per programme
+                  const byProgramme = rows.reduce((acc, row) => {
+                    if (!acc[row.programme_id]) acc[row.programme_id] = [];
+                    acc[row.programme_id].push(row);
+                    return acc;
+                  }, {});
+                  const progCount = Object.keys(byProgramme).length;
 
-                    {!collapsed[`${facKey}__${deptKey}`] && (
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-50/80 border-b border-gray-100">
-                            <th className="text-left px-5 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Programme</th>
-                            <th className="text-left px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Level / Mode</th>
-                            <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">National (UGX)</th>
-                            <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">International (UGX)</th>
-                            <th className="text-center px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                            <th className="px-4 py-2 w-20" />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map((row, i) => (
-                            <tr key={row.id}
-                              className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
-                              <td className="px-5 py-3">
-                                <p className="font-semibold text-gray-800">{row.programme_name}</p>
-                                <p className="text-[10px] text-gray-400 font-mono">{row.programme_code} · {STUDY_TIME_LABELS[row.study_time] || row.study_time}</p>
-                              </td>
-                              <td className="px-3 py-3 hidden md:table-cell">
-                                <span className="text-xs text-gray-500 capitalize">{row.programme_level}</span>
-                                {row.duration_years && <span className="text-[10px] text-gray-400 block">{row.duration_years} yr(s)</span>}
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                <span className="font-mono font-bold text-gray-800">{fmt(row.national_amount)}</span>
-                              </td>
-                              <td className="px-3 py-3 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <Globe size={11} className="text-blue-400" />
-                                  <span className="font-mono font-bold text-blue-700">{fmt(row.international_amount)}</span>
-                                </div>
-                              </td>
-                              <td className="px-3 py-3 text-center">
-                                <TuitionStatusBadge status={row.status} />
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-1.5">
-                                  <button onClick={() => setEditRow(row)}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
-                                    <Edit2 size={13} />
-                                  </button>
-                                  <button onClick={() => doDelete(row)}
-                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete">
-                                    <Trash2 size={13} />
-                                  </button>
-                                </div>
-                              </td>
+                  return (
+                    <div key={deptKey}>
+                      {/* Department sub-header */}
+                      <button onClick={() => toggleCollapse(`${facKey}__${deptKey}`)}
+                        className="w-full flex items-center justify-between px-5 py-2.5 bg-blue-50/60 border-b border-blue-100 hover:bg-blue-100/40 transition-colors">
+                        <div className="flex items-center gap-2">
+                          {collapsed[`${facKey}__${deptKey}`]
+                            ? <ChevronRight size={13} className="text-blue-400" />
+                            : <ChevronDown size={13} className="text-blue-400" />}
+                          <span className="text-xs font-semibold text-blue-700">{deptKey}</span>
+                          <span className="text-[10px] text-blue-500">{progCount} {progCount === 1 ? 'programme' : 'programmes'}</span>
+                        </div>
+                      </button>
+
+                      {!collapsed[`${facKey}__${deptKey}`] && (
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-gray-50/80 border-b border-gray-100">
+                              <th className="text-left px-5 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Programme</th>
+                              <th className="text-left px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Level</th>
+                              <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">National (UGX)</th>
+                              <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">International (UGX)</th>
+                              <th className="text-center px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                              <th className="px-4 py-2 w-20" />
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                ))}
+                          </thead>
+                          <tbody>
+                            {Object.entries(byProgramme).map(([progId, progRows], i) => {
+                              const first = progRows[0];
+                              const multiMode = progRows.length > 1;
+                              return (
+                                <tr key={progId}
+                                  className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
+                                  {/* Programme — shown once */}
+                                  <td className="px-5 py-3">
+                                    <p className="font-semibold text-gray-800">{first.programme_name}</p>
+                                    <p className="text-[10px] text-gray-400 font-mono">{first.programme_code}</p>
+                                  </td>
+                                  {/* Level — shown once */}
+                                  <td className="px-3 py-3 hidden md:table-cell">
+                                    <span className="text-xs text-gray-600 capitalize font-medium">{first.programme_level}</span>
+                                    {first.duration_years && <span className="text-[10px] text-gray-400 block">{first.duration_years} yr(s)</span>}
+                                  </td>
+                                  {/* National — stacked per study time */}
+                                  <td className="px-3 py-3 text-right align-top">
+                                    {progRows.map(row => (
+                                      <div key={row.id} className={`flex items-center justify-end gap-1.5 ${multiMode ? 'mb-1' : ''}`}>
+                                        {multiMode && (
+                                          <span className="text-[9px] text-gray-400 capitalize bg-gray-100 px-1.5 py-0.5 rounded-full">
+                                            {STUDY_TIME_LABELS[row.study_time] || row.study_time}
+                                          </span>
+                                        )}
+                                        <span className="font-mono font-bold text-gray-800 text-sm">{fmt(row.national_amount)}</span>
+                                      </div>
+                                    ))}
+                                  </td>
+                                  {/* International — stacked per study time */}
+                                  <td className="px-3 py-3 text-right align-top">
+                                    {progRows.map(row => (
+                                      <div key={row.id} className={`flex items-center justify-end gap-1 ${multiMode ? 'mb-1' : ''}`}>
+                                        {multiMode && (
+                                          <span className="text-[9px] text-gray-400 capitalize bg-blue-50 px-1.5 py-0.5 rounded-full">
+                                            {STUDY_TIME_LABELS[row.study_time] || row.study_time}
+                                          </span>
+                                        )}
+                                        <Globe size={10} className="text-blue-400 flex-shrink-0" />
+                                        <span className="font-mono font-bold text-blue-700 text-sm">{fmt(row.international_amount)}</span>
+                                      </div>
+                                    ))}
+                                  </td>
+                                  {/* Status — stacked */}
+                                  <td className="px-3 py-3 text-center align-top">
+                                    {progRows.map(row => (
+                                      <div key={row.id} className={multiMode ? 'mb-1' : ''}>
+                                        <TuitionStatusBadge status={row.status} />
+                                      </div>
+                                    ))}
+                                  </td>
+                                  {/* Actions — stacked */}
+                                  <td className="px-4 py-3 align-top">
+                                    {progRows.map(row => (
+                                      <div key={row.id} className={`flex items-center gap-1 ${multiMode ? 'mb-1' : ''}`}>
+                                        <button onClick={() => setEditRow(row)}
+                                          className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title={`Edit ${STUDY_TIME_LABELS[row.study_time] || row.study_time}`}>
+                                          <Edit2 size={12} />
+                                        </button>
+                                        <button onClick={() => doDelete(row)}
+                                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete">
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
