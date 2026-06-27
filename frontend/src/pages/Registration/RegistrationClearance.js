@@ -294,6 +294,20 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
 
           {type === 'academics' && (
             <div className="space-y-4">
+              {/* Non-resident finalisation notice */}
+              {reg.residence_status === 'non_resident' && (
+                <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <CheckCircle2 size={18} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-emerald-800">Day Student — Final Clearance Step</p>
+                    <p className="text-xs text-emerald-700 mt-0.5">
+                      This student is <strong>Non-Resident (Day)</strong>. Clearing academics will mark them as
+                      <strong> Fully Registered</strong> immediately — no accommodation clearance required.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Registration Type */}
               <div>
                 <label className={labelCls}>Registration Type</label>
@@ -644,7 +658,10 @@ function ClearanceModal({ action, onClose, onSave, saving }) {
             <button type="submit" disabled={saving || (needsWaiver && !form.grant_waiver)}
               className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-white rounded-xl disabled:opacity-50 transition-colors ${cfg.btnColor}`}>
               <BadgeCheck size={15} />
-              {saving ? 'Clearing…' : `Clear ${STAGE_CONFIG[type].label.split(' ')[0]}`}
+              {saving ? 'Clearing…'
+                : type === 'academics' && reg.residence_status === 'non_resident'
+                  ? 'Clear Academics & Register'
+                  : `Clear ${STAGE_CONFIG[type].label.split(' ')[0]}`}
             </button>
           </div>
         </form>
@@ -755,12 +772,11 @@ export default function RegistrationClearance() {
   }
 
   function nextAction(reg) {
-    const map = {
-      initiated: 'accounts',
-      accounts_cleared: 'academics',
-      academics_cleared: 'accommodation',
-    };
-    return map[reg.status] || null;
+    if (reg.status === 'initiated') return 'accounts';
+    if (reg.status === 'accounts_cleared') return 'academics';
+    // Non-residents skip accommodation — they're fully registered after academics
+    if (reg.status === 'academics_cleared' && reg.residence_status !== 'non_resident') return 'accommodation';
+    return null;
   }
 
   const yearLabel = years.find(y => y.id === filter.academic_year_id)?.label || '';

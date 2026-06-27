@@ -105,7 +105,9 @@ async function clearStage(req, res) {
   }
 
   let nextStatus = targetStatus;
+  // Non-resident students are fully registered after academics clearance — no accommodation step
   if (stage === 'accommodation') nextStatus = 'fully_registered';
+  if (stage === 'academics' && reg.residence_status === 'non_resident') nextStatus = 'fully_registered';
 
   await db.query(
     `UPDATE student_registrations
