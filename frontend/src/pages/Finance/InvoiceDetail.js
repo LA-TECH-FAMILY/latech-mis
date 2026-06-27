@@ -193,7 +193,7 @@ export default function InvoiceDetail() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className={labelCls}>Amount (UGX)</label>
-                <input type="number" min="1" step="1000" className={inputCls} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder={fmt(data.balance)} />
+                <input type="number" min="1" step="1" className={inputCls} value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} required placeholder={fmt(data.balance)} />
               </div>
               <div>
                 <label className={labelCls}>Payment Date</label>
