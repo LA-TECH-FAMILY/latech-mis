@@ -667,7 +667,15 @@ function TuitionFeesTab({ academicYearId, programmes }) {
                       </button>
 
                       {!collapsed[`${facKey}__${deptKey}`] && (
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm table-fixed">
+                          <colgroup>
+                            <col className="w-[35%]" />
+                            <col className="w-[12%] hidden md:table-column" />
+                            <col className="w-[18%]" />
+                            <col className="w-[18%]" />
+                            <col className="w-[11%]" />
+                            <col className="w-[6%]" />
+                          </colgroup>
                           <thead>
                             <tr className="bg-gray-50/80 border-b border-gray-100">
                               <th className="text-left px-5 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Programme</th>
@@ -675,7 +683,7 @@ function TuitionFeesTab({ academicYearId, programmes }) {
                               <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">National (UGX)</th>
                               <th className="text-right px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">International (UGX)</th>
                               <th className="text-center px-3 py-2 text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                              <th className="px-4 py-2 w-20" />
+                              <th className="px-4 py-2" />
                             </tr>
                           </thead>
                           <tbody>
@@ -687,7 +695,7 @@ function TuitionFeesTab({ academicYearId, programmes }) {
                                   className={`border-b border-gray-50 hover:bg-blue-50/20 transition-colors ${i % 2 === 1 ? 'bg-gray-50/30' : ''}`}>
                                   {/* Programme — shown once */}
                                   <td className="px-5 py-3">
-                                    <p className="font-semibold text-gray-800">{first.programme_name}</p>
+                                    <p className="font-semibold text-gray-800 truncate">{first.programme_name}</p>
                                     <p className="text-[10px] text-gray-400 font-mono">{first.programme_code}</p>
                                   </td>
                                   {/* Level — shown once */}
