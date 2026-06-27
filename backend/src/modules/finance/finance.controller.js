@@ -3,30 +3,37 @@ const db = require('../../config/db');
 // ─── Fee Items ────────────────────────────────────────────────────────────────
 
 async function listFeeItems(req, res) {
-  const { rows } = await db.query('SELECT * FROM fee_items ORDER BY name');
+  const { category } = req.query;
+  const where = category ? `WHERE category = $1` : '';
+  const { rows } = await db.query(
+    `SELECT * FROM fee_items ${where} ORDER BY category, name`,
+    category ? [category] : []
+  );
   res.json(rows);
 }
 
 async function createFeeItem(req, res) {
-  const { name, description } = req.body;
+  const { name, description, category, billing_period } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   const { rows } = await db.query(
-    'INSERT INTO fee_items (name, description) VALUES ($1, $2) RETURNING *',
-    [name, description]
+    'INSERT INTO fee_items (name, description, category, billing_period) VALUES ($1, $2, $3, $4) RETURNING *',
+    [name, description, category || 'other', billing_period || 'per_semester']
   );
   res.status(201).json(rows[0]);
 }
 
 async function updateFeeItem(req, res) {
   const { id } = req.params;
-  const { name, description, is_active } = req.body;
+  const { name, description, is_active, category, billing_period } = req.body;
   await db.query(
     `UPDATE fee_items SET
-       name = COALESCE($1, name),
-       description = COALESCE($2, description),
-       is_active = COALESCE($3, is_active)
-     WHERE id = $4`,
-    [name, description, is_active, id]
+       name           = COALESCE($1, name),
+       description    = COALESCE($2, description),
+       is_active      = COALESCE($3, is_active),
+       category       = COALESCE($4, category),
+       billing_period = COALESCE($5, billing_period)
+     WHERE id = $6`,
+    [name, description, is_active, category, billing_period, id]
   );
   res.json({ message: 'Updated' });
 }
@@ -34,40 +41,127 @@ async function updateFeeItem(req, res) {
 // ─── Fee Structures ────────────────────────────────────────────────────────────
 
 async function listFeeStructures(req, res) {
-  const { academic_year_id } = req.query;
+  const { academic_year_id, semester, status } = req.query;
   const params = [];
   const where = ['1=1'];
   if (academic_year_id) { params.push(academic_year_id); where.push(`fs.academic_year_id = $${params.length}`); }
+  if (semester) { params.push(parseInt(semester)); where.push(`(fs.semester = $${params.length} OR fs.semester IS NULL)`); }
+  if (status) { params.push(status); where.push(`fs.status = $${params.length}`); }
 
   const { rows } = await db.query(
-    `SELECT fs.*, fi.name AS fee_item_name,
+    `SELECT fs.*,
+            fi.name AS fee_item_name, fi.category, fi.description AS fee_item_description,
             ay.label AS academic_year_label,
-            p.name AS programme_name, p.code AS programme_code
+            p.name AS programme_name, p.code AS programme_code,
+            u.first_name || ' ' || u.last_name AS created_by_name,
+            ab.first_name || ' ' || ab.last_name AS approved_by_name
      FROM fee_structures fs
      JOIN fee_items fi ON fi.id = fs.fee_item_id
      JOIN academic_years ay ON ay.id = fs.academic_year_id
      LEFT JOIN programmes p ON p.id = fs.programme_id
+     LEFT JOIN users u ON u.id = fs.created_by
+     LEFT JOIN users ab ON ab.id = fs.approved_by
      WHERE ${where.join(' AND ')}
-     ORDER BY p.name NULLS FIRST, fs.year_of_study NULLS FIRST, fs.semester NULLS FIRST, fi.name`,
+     ORDER BY fs.semester NULLS LAST, fi.category, fi.name, p.name NULLS FIRST`,
     params
   );
   res.json(rows);
 }
 
+async function getFeeStructureStats(req, res) {
+  const { academic_year_id } = req.query;
+  if (!academic_year_id) return res.status(400).json({ error: 'academic_year_id required' });
+  const { rows } = await db.query(
+    `SELECT
+       COUNT(*) AS total,
+       COUNT(*) FILTER (WHERE status = 'approved') AS approved,
+       COUNT(*) FILTER (WHERE status = 'draft') AS draft,
+       COUNT(*) FILTER (WHERE status = 'outgoing') AS outgoing,
+       COUNT(DISTINCT fi.category) AS categories,
+       COALESCE(SUM(fs.amount) FILTER (WHERE status = 'approved' AND fs.programme_id IS NULL AND fs.semester = 1), 0) AS sem1_total,
+       COALESCE(SUM(fs.amount) FILTER (WHERE status = 'approved' AND fs.programme_id IS NULL AND fs.semester = 2), 0) AS sem2_total
+     FROM fee_structures fs
+     JOIN fee_items fi ON fi.id = fs.fee_item_id
+     WHERE fs.academic_year_id = $1`,
+    [academic_year_id]
+  );
+  res.json(rows[0]);
+}
+
 async function createFeeStructure(req, res) {
-  const { academic_year_id, programme_id, year_of_study, semester, fee_item_id, amount } = req.body;
+  const {
+    academic_year_id, programme_id, year_of_study, semester,
+    fee_item_id, amount, status, student_type, billing_period, notes,
+  } = req.body;
   if (!academic_year_id || !fee_item_id || !amount) {
     return res.status(400).json({ error: 'academic_year_id, fee_item_id, amount are required' });
   }
   const { rows } = await db.query(
-    `INSERT INTO fee_structures (academic_year_id, programme_id, year_of_study, semester, fee_item_id, amount, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [academic_year_id, programme_id || null, year_of_study || null, semester || null, fee_item_id, amount, req.user.id]
+    `INSERT INTO fee_structures
+       (academic_year_id, programme_id, year_of_study, semester, fee_item_id,
+        amount, status, student_type, billing_period, notes, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+    [
+      academic_year_id, programme_id || null, year_of_study || null, semester || null,
+      fee_item_id, amount,
+      status || 'draft', student_type || 'all', billing_period || 'per_semester',
+      notes || null, req.user.id,
+    ]
   );
   res.status(201).json(rows[0]);
 }
 
+async function updateFeeStructure(req, res) {
+  const { id } = req.params;
+  const { amount, status, student_type, billing_period, notes, programme_id, year_of_study, semester } = req.body;
+
+  const existing = (await db.query('SELECT * FROM fee_structures WHERE id=$1', [id])).rows[0];
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (existing.status === 'approved' && status !== 'outgoing') {
+    return res.status(400).json({ error: 'Approved fee structures can only be set to outgoing' });
+  }
+
+  await db.query(
+    `UPDATE fee_structures SET
+       amount         = COALESCE($1, amount),
+       status         = COALESCE($2, status),
+       student_type   = COALESCE($3, student_type),
+       billing_period = COALESCE($4, billing_period),
+       notes          = COALESCE($5, notes),
+       programme_id   = $6,
+       year_of_study  = $7,
+       semester       = $8,
+       updated_at     = NOW()
+     WHERE id = $9`,
+    [amount, status, student_type, billing_period, notes,
+     programme_id || null, year_of_study || null, semester || null, id]
+  );
+  res.json({ message: 'Updated' });
+}
+
+async function approveFeeStructure(req, res) {
+  const { id } = req.params;
+  const { action } = req.body; // 'approve' | 'decline' | 'outgoing'
+  const statusMap = { approve: 'approved', decline: 'draft', outgoing: 'outgoing' };
+  const newStatus = statusMap[action];
+  if (!newStatus) return res.status(400).json({ error: 'Invalid action' });
+
+  await db.query(
+    `UPDATE fee_structures SET
+       status = $1,
+       approved_by = CASE WHEN $1 = 'approved' THEN $2 ELSE approved_by END,
+       approved_at = CASE WHEN $1 = 'approved' THEN NOW() ELSE approved_at END,
+       updated_at  = NOW()
+     WHERE id = $3`,
+    [newStatus, req.user.id, id]
+  );
+  res.json({ message: `Fee structure ${action}d` });
+}
+
 async function deleteFeeStructure(req, res) {
+  const existing = (await db.query('SELECT status FROM fee_structures WHERE id=$1', [req.params.id])).rows[0];
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  if (existing.status === 'approved') return res.status(400).json({ error: 'Cannot delete an approved fee structure. Set it to outgoing first.' });
   await db.query('DELETE FROM fee_structures WHERE id = $1', [req.params.id]);
   res.json({ message: 'Deleted' });
 }
@@ -303,7 +397,7 @@ async function getStudentFinancials(req, res) {
 
 module.exports = {
   listFeeItems, createFeeItem, updateFeeItem,
-  listFeeStructures, createFeeStructure, deleteFeeStructure,
+  listFeeStructures, getFeeStructureStats, createFeeStructure, updateFeeStructure, approveFeeStructure, deleteFeeStructure,
   listInvoices, getInvoice, createInvoice,
   recordPayment, listPayments, getStudentFinancials,
 };

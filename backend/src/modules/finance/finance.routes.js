@@ -14,7 +14,10 @@ router.put('/fee-items/:id', requireRole('admin', 'finance_officer'), wrap(c.upd
 
 // Fee structures
 router.get('/fee-structures', finance, wrap(c.listFeeStructures));
+router.get('/fee-structures/stats', finance, wrap(c.getFeeStructureStats));
 router.post('/fee-structures', requireRole('admin', 'finance_officer'), wrap(c.createFeeStructure));
+router.put('/fee-structures/:id', requireRole('admin', 'finance_officer'), wrap(c.updateFeeStructure));
+router.post('/fee-structures/:id/approve', requireRole('admin', 'finance_officer'), wrap(c.approveFeeStructure));
 router.delete('/fee-structures/:id', requireRole('admin', 'finance_officer'), wrap(c.deleteFeeStructure));
 
 // Invoices
