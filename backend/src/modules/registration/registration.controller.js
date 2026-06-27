@@ -76,6 +76,20 @@ async function clearStage(req, res) {
   const targetStatus = stageMap[stage];
 
   if (stage === 'accounts') {
+    // Always use live invoice clearance — student may have paid more since registration was initiated
+    const liveInvoice = (await db.query(
+      `SELECT clearance_percent FROM invoices WHERE student_id=$1 AND academic_year_id=$2 AND semester=$3 LIMIT 1`,
+      [reg.student_id, reg.academic_year_id, reg.semester]
+    )).rows[0];
+
+    const livePct = liveInvoice ? parseFloat(liveInvoice.clearance_percent) : parseFloat(reg.clearance_percent || 0);
+
+    // Sync the stored value so future reads are current
+    await db.query(
+      'UPDATE student_registrations SET clearance_percent=$1 WHERE id=$2',
+      [livePct, reg.id]
+    );
+
     const window = (await db.query(
       `SELECT min_clearance_percent FROM registration_windows
        WHERE academic_year_id=$1 AND semester=$2 AND is_active=TRUE LIMIT 1`,
@@ -83,9 +97,9 @@ async function clearStage(req, res) {
     )).rows[0];
 
     const minPct = window ? parseFloat(window.min_clearance_percent) : 60;
-    if (!reg.financial_waiver && parseFloat(reg.clearance_percent) < minPct) {
+    if (!reg.financial_waiver && livePct < minPct) {
       return res.status(400).json({
-        error: `Clearance too low. Student has paid ${reg.clearance_percent}% but minimum is ${minPct}%. Grant a waiver or wait for payment.`
+        error: `Clearance too low. Student has paid ${livePct.toFixed(2)}% but minimum is ${minPct}%. Grant a waiver or wait for payment.`
       });
     }
   }
