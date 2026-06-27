@@ -82,11 +82,11 @@ async function getStats(req, res) {
 
     // Recent 5 applications
     db.query(`SELECT a.id, a.first_name, a.last_name, a.status, a.created_at,
-      ao.programme_id,
       p.name AS programme_name
       FROM applicants a
       LEFT JOIN admission_offers ao ON ao.applicant_id = a.id
-      LEFT JOIN programmes p ON p.id = ao.programme_id
+      LEFT JOIN intakes i ON i.id = ao.intake_id
+      LEFT JOIN programmes p ON p.id = i.programme_id
       ORDER BY a.created_at DESC LIMIT 5`),
 
     // Programmes by level stats
